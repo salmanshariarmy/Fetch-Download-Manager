@@ -1,10 +1,8 @@
-# Fetch — Windows Download Manager (0.1.0 MVP)
+# Fetch — Windows Download Manager (0.2.0 Desktop Upgrade)
 
-A source-code download manager for **Windows 10/11 x64**. Paste a direct HTTP(S)
-file URL, start the download, pause or resume it, and keep your download history
-across app restarts. Ranged downloads use up to eight connections.
+A source-code download manager for **Windows 10/11 x64**. Paste a direct HTTP(S) file URL, start a segmented download, pause/resume it, and browse download history with an organized desktop interface. Ranged downloads use up to eight connections.
 
-> **Scope:** This is an implemented starter application, **not** the complete
+> **Scope:** This is an implemented desktop upgrade, **not** the complete
 > IDM-scale application in `docs/Original-full-specification.txt`. In particular,
 > the C++/SQLite engine, browser integration, media pipeline, site grabber,
 > signed MSI, and explicit malware scanning are **not** implemented. See
@@ -27,7 +25,7 @@ across app restarts. Ranged downloads use up to eight connections.
    shortcut. Windows may show an **unverified publisher** warning: the installer
    is **unsigned** until you arrange code signing yourself.
 
-Optional: pushing a version tag like `v0.1.0` runs the workflow and, if the
+Optional: pushing a version tag like `v0.2.0` runs the workflow and, if the
 repository permits it, attaches the binaries to a GitHub Release.
 
 ## Push from a Windows Terminal or macOS/Linux shell
@@ -92,3 +90,25 @@ been verified in this environment. GitHub Actions will actually compile and
 run these tests on a Windows runner; if the job fails, inspect the build log.
 
 MIT license. Original icon created for this project; no IDM branding or assets.
+
+
+## Desktop upgrade in 0.2.0
+
+- IDM-inspired **but independently branded** layout: toolbar, grouped categories,
+  wider download table, progress/speed/remaining-time columns and details panel.
+- Working actions: add direct URL, paste URL, resume selected, pause selected,
+  pause all, resume unfinished, remove entry, clear completed history, open file,
+  open its containing folder, change save directory and copy original URL.
+- Automatic extension-based categories and clickable filters (All, Downloading,
+  Unfinished, Finished, Video, Music, Compressed, Programs, Documents, Images, Other).
+- ProgressBar explicitly binds read-only progress using OneWay mode to prevent
+  the previous unhandled WPF binding exception.
+- The current download engine and persisted `%LOCALAPPDATA%\Fetch` data format
+  remain unchanged.
+
+**Still not included:** automatic browser takeover, authenticated-site cookies,
+HLS/DASH video capture, site grabber, queue time scheduler, proxy and bandwidth
+controls, and the original C++/SQLite backend. This is not feature parity with IDM.
+**Important:** Installer is unsigned, and the new source has not yet been
+compiled on Windows in this authoring environment. GitHub Actions must pass
+before trying the installer. Tests and build passing are not a full QA audit.

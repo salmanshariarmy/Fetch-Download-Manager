@@ -7,7 +7,7 @@ implemented **.NET 8 WPF functional MVP**, NOT a full implementation of that spe
 
 | Feature | Status |
 | --- | --- |
-| Windows desktop window with URL entry, download queue | Implemented |
+| Windows desktop app with URL entry, queue, categories, toolbar and filters | Implemented (0.2 source) |
 | HTTP(S), system TLS verification and normal redirects | Implemented |
 | Parallel HTTP byte-range transfers (up to 8) | Implemented |
 | Pause, resume from disk part files | Implemented when server has strong ETag or Last-Modified and supports ranges |
@@ -21,7 +21,8 @@ implemented **.NET 8 WPF functional MVP**, NOT a full implementation of that spe
 | C++20 engine, CLI, named pipe, SQLite, WiX MSI | Not included |
 | Browser extensions, native messaging | Not included |
 | HLS/DASH/yt-dlp/ffmpeg, site grabber, FTP/FTPS | Not included |
-| Scheduler, authentication, proxies, categories, throttle | Not included |
+| Category filters and automatic extension classification | Implemented (0.2 source) |
+| Scheduler, authentication, proxies, throttle | Not included |
 | Explicit malware scanning via attachment services | Not included (Internet Zone is marked, NOT scanned by this app) |
 | Authenticode code signing | Not included (requires your own code-signing certificate) |
 | ARM64 installer | Not included |
