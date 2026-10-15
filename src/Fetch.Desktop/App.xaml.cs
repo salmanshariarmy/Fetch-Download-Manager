@@ -1,3 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 namespace Fetch.Desktop;
-public partial class App : Application { }
+public partial class App : System.Windows.Application { }
+
