@@ -13,6 +13,7 @@ public sealed class TransferEngine : IDisposable
     private const int BufferSize = 128 * 1024;
     private readonly HttpClient _http;
     private readonly JobStore _store;
+    private readonly BandwidthLimiter _limiter;
 
     private sealed record RemoteInfo(long? Length, bool Ranges, string? ETag,
         string? LastModified, bool IdentityEncoding, string? SuggestedFileName);
@@ -57,20 +58,23 @@ public sealed class TransferEngine : IDisposable
         public void Finish() => _progress?.Report(new TransferProgress(Bytes, _total, 0));
     }
 
-    public TransferEngine(JobStore store)
+    public TransferEngine(JobStore store, DownloadPreferences? preferences = null)
     {
         _store = store;
+        _limiter = new BandwidthLimiter(preferences?.RateLimitKiB ?? 0);
         var handler = new HttpClientHandler
         {
             AutomaticDecompression = DecompressionMethods.None,
             AllowAutoRedirect = true,
             MaxAutomaticRedirections = 10,
-            MaxConnectionsPerServer = 8,
+            MaxConnectionsPerServer = 32,
             UseCookies = false
         };
         _http = new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(10) };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("Fetch/0.1 (Windows download manager)");
     }
+
+    public void SetSpeedLimitKiB(int value) => _limiter.SetLimit(value);
 
     public async Task<TransferResult> DownloadAsync(
         DownloadItem item,
@@ -91,7 +95,7 @@ public sealed class TransferEngine : IDisposable
             !string.IsNullOrWhiteSpace(remote.SuggestedFileName))
             item.FileName = FileNameSafety.Sanitize(remote.SuggestedFileName);
         int proposedSegments = SegmentPlan.Recommend(remote.Length,
-            remote.Ranges && remote.IdentityEncoding);
+            remote.Ranges && remote.IdentityEncoding, desired: Math.Clamp(item.RequestedConnections, 1, 32));
         if (item.SegmentCount > 0 && item.SegmentCount != proposedSegments)
             EraseParts(partDir);
 
@@ -114,6 +118,11 @@ public sealed class TransferEngine : IDisposable
 
         if (remote.Length == 0)
         {
+            // An empty file must satisfy the requested checksum, too.
+            if (!string.IsNullOrWhiteSpace(item.ExpectedSha256) &&
+                !Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Array.Empty<byte>()))
+                    .Equals(item.ExpectedSha256, StringComparison.OrdinalIgnoreCase))
+                throw new IOException("SHA-256 mismatch for empty download; no final file was created.");
             string emptyTarget = FileNameSafety.FreePath(item.SaveDirectory, item.FileName);
             await using (var empty = new FileStream(emptyTarget, FileMode.CreateNew,
                 FileAccess.Write, FileShare.None)) { }
@@ -234,6 +243,8 @@ public sealed class TransferEngine : IDisposable
                 output.Flush(true);
             }
             cancellation.ThrowIfCancellationRequested();
+            // Reject a mismatched checksum before exposing the final downloaded file.
+            await HashVerifier.VerifySha256Async(merging, item.ExpectedSha256, cancellation).ConfigureAwait(false);
             // Same-volume rename from the merge file to the final download.
             File.Move(merging, target, overwrite: false);
             TryMarkInternetZone(target, item.Url);
@@ -300,8 +311,11 @@ public sealed class TransferEngine : IDisposable
                 byte[] buffer = new byte[BufferSize];
                 long received = have;
                 int read;
-                while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) != 0)
+                while (true)
                 {
+                    int budget = await _limiter.ReserveAsync(buffer.Length, ct).ConfigureAwait(false);
+                    read = await source.ReadAsync(buffer.AsMemory(0, budget), ct).ConfigureAwait(false);
+                    if (read == 0) break;
                     ct.ThrowIfCancellationRequested();
                     if (range.HasValue && received + read > range.Value.Length)
                         throw new IOException("Server sent more bytes than the specified range.");

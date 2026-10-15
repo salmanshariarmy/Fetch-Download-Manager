@@ -4,10 +4,12 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Threading;
 using Fetch.Core;
 
 namespace Fetch.Desktop.ViewModels;
@@ -18,7 +20,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly TransferEngine _engine;
     private readonly MediaDownloader _media = new();
     private string _mediaQuality = "Best";
-    private readonly SemaphoreSlim _slots = new(3, 3);
+    private readonly DownloadPreferences _preferences;
+    private readonly SemaphoreSlim _slots;
+    private readonly DispatcherTimer _scheduleTimer = new() { Interval = TimeSpan.FromSeconds(15) };
+    private string _connectionsText = "8";
+    private string _concurrentText = "3";
+    private string _rateLimitText = "0";
+    private string _sha256Text = "";
+    private string _scheduleText = "";
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _active = new();
     private string _urlInput = "";
     private string _downloadFolder;
@@ -31,6 +40,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ObservableCollection<DownloadFilter> Filters { get; } = new()
     {
         new("All downloads", "all"), new("Downloading", "active"),
+        new("Scheduled", "scheduled"),
         new("Unfinished", "unfinished"), new("Finished", "done"),
         new("Video", "Video"), new("Music", "Music"),
         new("Compressed", "Compressed"), new("Programs", "Programs"),
@@ -45,6 +55,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         set { _urlInput = value; Changed(); }
     }
 
+    public string ConnectionsText { get => _connectionsText; set { _connectionsText = value; Changed(); } }
+    public string ConcurrentText { get => _concurrentText; set { _concurrentText = value; Changed(); } }
+    public string RateLimitText { get => _rateLimitText; set { _rateLimitText = value; Changed(); } }
+    public string ExpectedSha256Text { get => _sha256Text; set { _sha256Text = value; Changed(); } }
+    public string ScheduleText { get => _scheduleText; set { _scheduleText = value; Changed(); } }
     public string[] MediaQualityChoices { get; } = new[] { "Best", "1080p", "720p", "480p", "Audio only" };
     public string MediaQuality
     {
@@ -81,6 +96,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             Changed(nameof(SelectedError));
             Changed(nameof(SelectedUrl));
             Changed(nameof(SelectedPath));
+            ScheduleText = value?.Item.ScheduledAt?.ToLocalTime().ToString(SchedulePolicy.Format) ?? "";
         }
     }
 
@@ -106,11 +122,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand CopyUrlCommand { get; }
     public ICommand PasteUrlCommand { get; }
     public ICommand AboutCommand { get; }
+    public ICommand ApplyPreferencesCommand { get; }
+    public ICommand ScheduleCommand { get; }
+    public ICommand ClearScheduleCommand { get; }
 
     public MainViewModel()
     {
         _downloadFolder = _store.LoadDownloadDirectory();
-        _engine = new TransferEngine(_store);
+        _preferences = _store.LoadPreferences();
+        _connectionsText = _preferences.DesiredConnections.ToString(CultureInfo.InvariantCulture);
+        _concurrentText = _preferences.MaxConcurrentJobs.ToString(CultureInfo.InvariantCulture);
+        _rateLimitText = _preferences.RateLimitKiB.ToString(CultureInfo.InvariantCulture);
+        _slots = new SemaphoreSlim(_preferences.MaxConcurrentJobs, _preferences.MaxConcurrentJobs);
+        _engine = new TransferEngine(_store, _preferences);
         JobsView = CollectionViewSource.GetDefaultView(Jobs);
         JobsView.Filter = MatchesFilter;
         Jobs.CollectionChanged += OnJobsChanged;
@@ -128,6 +152,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         CopyUrlCommand = new RelayCommand(CopyUrl);
         PasteUrlCommand = new RelayCommand(PasteUrl);
         AboutCommand = new RelayCommand(About);
+        ApplyPreferencesCommand = new RelayCommand(ApplyPreferences);
+        ScheduleCommand = new RelayCommand(ScheduleSelected);
+        ClearScheduleCommand = new RelayCommand(ClearSchedule);
         try
         {
             foreach (var item in _store.Load()) Jobs.Add(new DownloadJobViewModel(item));
@@ -137,6 +164,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             _message = "Saved job history could not be opened. Original jobs.json was not deleted.";
         }
         SelectedFilter = Filters[0];
+        _scheduleTimer.Tick += (_, _) => StartDueScheduled();
+        _scheduleTimer.Start();
+        StartDueScheduled();
     }
 
     private bool MatchesFilter(object candidate)
@@ -146,6 +176,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             null or "all" => true,
             "active" => vm.Item.Status == JobStatus.Downloading || vm.Item.Status == JobStatus.Queued,
+            "scheduled" => vm.Item.Status == JobStatus.Scheduled,
             "unfinished" => vm.Item.Status != JobStatus.Completed,
             "done" => vm.Item.Status == JobStatus.Completed,
             string category => string.Equals(vm.Category, category, StringComparison.Ordinal)
@@ -184,6 +215,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 return false;
             }
             bool isMedia = forceMedia || MediaDownloader.IsKnownMediaUrl(url);
+            string checksum = ExpectedSha256Text.Trim();
+            if (!HashVerifier.IsValidSha256(checksum))
+            {
+                error = "SHA-256 must contain 64 hexadecimal characters, or be empty.";
+                ShowMessage(error);
+                return false;
+            }
+            if (isMedia && checksum.Length > 0)
+            {
+                error = "SHA-256 verification is currently for direct file downloads only.";
+                ShowMessage(error);
+                return false;
+            }
             string fileName = isMedia ? "video.mp4" : FileNameSafety.FromUrl(url);
             string chosen = FileNameSafety.FreePath(DownloadFolder, fileName, path =>
                 File.Exists(path) || Jobs.Any(x =>
@@ -196,12 +240,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 SaveDirectory = DownloadFolder,
                 Status = JobStatus.Queued,
                 IsMedia = isMedia,
-                MediaQuality = isMedia ? MediaQuality : "Best"
+                MediaQuality = isMedia ? MediaQuality : "Best",
+                RequestedConnections = _preferences.DesiredConnections,
+                ExpectedSha256 = checksum.Length > 0 ? checksum.ToUpperInvariant() : null
             };
             var vm = new DownloadJobViewModel(item);
             Jobs.Add(vm);
             SelectedJob = vm;
-            if (clearInput) UrlInput = "";
+            if (clearInput) { UrlInput = ""; ExpectedSha256Text = ""; }
             ShowMessage("Added: " + vm.Name);
             Persist();
             Start(vm);
@@ -221,6 +267,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             _active.ContainsKey(target.Item.Id)) return;
         var cancellation = new CancellationTokenSource();
         if (!_active.TryAdd(target.Item.Id, cancellation)) { cancellation.Dispose(); return; }
+        target.Item.ScheduledAt = null; // Manual resume overrides a future schedule.
         target.Item.Status = JobStatus.Queued;
         target.Item.Error = null;
         target.Refresh();
@@ -263,11 +310,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 vm.Item.FileName = Path.GetFileName(result.SavedPath);
                 vm.Item.DownloadedBytes = result.Bytes;
                 vm.Item.Status = JobStatus.Completed;
+                vm.Item.ScheduledAt = null;
             }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
-            if (!_disposing) vm.Item.Status = JobStatus.Paused;
+            if (!_disposing && vm.Item.Status != JobStatus.Scheduled)
+                vm.Item.Status = JobStatus.Paused;
         }
         catch (Exception ex)
         {
@@ -290,6 +339,81 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 Persist();
             }
         }
+    }
+
+    private void ApplyPreferences()
+    {
+        if (!int.TryParse(ConnectionsText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int connections) ||
+            !int.TryParse(ConcurrentText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int concurrent) ||
+            !int.TryParse(RateLimitText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int rate))
+        {
+            ShowMessage("Enter whole numbers in download options.");
+            return;
+        }
+        var proposed = new DownloadPreferences
+        {
+            DesiredConnections = connections,
+            MaxConcurrentJobs = concurrent,
+            RateLimitKiB = rate
+        };
+        try
+        {
+            proposed.Validate();
+            _store.SavePreferences(proposed);
+            _preferences.DesiredConnections = connections;
+            _preferences.MaxConcurrentJobs = concurrent;
+            _preferences.RateLimitKiB = rate;
+            _engine.SetSpeedLimitKiB(rate);
+            ShowMessage("Settings saved. Speed limit applies immediately; concurrency applies after restart. " +
+                "Connection count applies to newly added direct downloads.");
+        }
+        catch (Exception ex) when (ex is ArgumentOutOfRangeException or IOException or UnauthorizedAccessException)
+        {
+            ShowMessage("Could not save options: " + ex.Message);
+        }
+    }
+
+    private void ScheduleSelected()
+    {
+        if (SelectedJob is not { } job || job.Item.Status == JobStatus.Completed)
+        {
+            ShowMessage("Select an unfinished download to schedule.");
+            return;
+        }
+        if (!SchedulePolicy.TryParseLocal(ScheduleText, out var when) || when <= DateTimeOffset.Now)
+        {
+            ShowMessage("Enter a future local start time in yyyy-MM-dd HH:mm format.");
+            return;
+        }
+        // Cancel an in-flight transfer; the cancellation handler retains Scheduled status.
+        job.Item.ScheduledAt = when;
+        job.Item.Status = JobStatus.Scheduled;
+        if (_active.TryGetValue(job.Item.Id, out var source)) source.Cancel();
+        job.Refresh();
+        RefreshSummary();
+        Persist();
+        ShowMessage("Scheduled for " + when.ToLocalTime().ToString("yyyy-MM-dd HH:mm") + ". Keep Fetch open to start on time.");
+    }
+
+    private void ClearSchedule()
+    {
+        if (SelectedJob is not { } job) return;
+        job.Item.ScheduledAt = null;
+        if (job.Item.Status == JobStatus.Scheduled) job.Item.Status = JobStatus.Paused;
+        job.Refresh();
+        ScheduleText = "";
+        RefreshSummary();
+        Persist();
+    }
+
+    private void StartDueScheduled()
+    {
+        if (_disposing) return;
+        DateTimeOffset now = DateTimeOffset.Now;
+        foreach (var job in Jobs.ToArray())
+            if (job.Item.Status == JobStatus.Scheduled &&
+                SchedulePolicy.IsDue(job.Item.ScheduledAt, now) &&
+                !_active.ContainsKey(job.Item.Id)) Start(job);
     }
 
     private void Pause()
@@ -391,11 +515,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     }
 
     private static void About() => System.Windows.MessageBox.Show(
-        "Fetch Download Manager 0.4 — Community Edition\n\n" +
+        "Fetch Download Manager 0.5 — Community Edition\n\n" +
         "Direct HTTP(S) downloads, multi-part transfer, resume, categories and queue controls.\n\n" +
         "Chrome/Edge extension: manual link forwarding and opt-in download capture.\n" +
         "Media downloads require user-installed yt-dlp and optional FFmpeg.\n" +
-        "Site grabber, advanced scheduler and complete browser interception are not included.\n" +
+        "Scheduled starts, configurable connections, speed limit and optional SHA-256 are available.\n" +
+        "A full site grabber, FTP and complete browser interception are not included.\n" +
         "Fetch is independently developed and is not affiliated with Internet Download Manager.",
         "About Fetch", MessageBoxButton.OK, MessageBoxImage.Information);
 
@@ -417,6 +542,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public void Dispose()
     {
         _disposing = true;
+        _scheduleTimer.Stop();
         foreach (var source in _active.Values) source.Cancel();
         try { _store.Save(Jobs.Select(j => j.Item)); } catch (IOException) { }
     }

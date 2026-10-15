@@ -7,6 +7,7 @@ public static class JobStatus
     public const string Paused = "Paused";
     public const string Completed = "Completed";
     public const string Failed = "Failed";
+    public const string Scheduled = "Scheduled";
 }
 
 public sealed class DownloadItem
@@ -16,6 +17,9 @@ public sealed class DownloadItem
     public string FileName { get; set; } = "download.bin";
     public string SaveDirectory { get; set; } = "";
     public string Status { get; set; } = JobStatus.Queued;
+    public int RequestedConnections { get; set; } = 8;
+    public DateTimeOffset? ScheduledAt { get; set; }
+    public string? ExpectedSha256 { get; set; }
     public long? TotalBytes { get; set; }
     public long DownloadedBytes { get; set; }
     public int SegmentCount { get; set; }

@@ -34,7 +34,7 @@
             <RowDefinition Height="29" />
         </Grid.RowDefinitions>
 
-        <!-- Real commands only; unavailable IDM-style features are not represented by fake buttons. -->
+        <!-- Working commands only; unfinished capabilities are not presented as functional. -->
         <Menu Grid.Row="0" Background="#0D1726" Foreground="#EDF5FC" Padding="7,1">
             <MenuItem Header="Tasks">
                 <MenuItem Header="Add URL" Command="{Binding AddCommand}" InputGestureText="Ctrl+Enter" />
@@ -54,6 +54,7 @@
                 <MenuItem Header="Open containing folder" Command="{Binding OpenFolderCommand}" />
                 <MenuItem Header="Copy selected URL" Command="{Binding CopyUrlCommand}" />
                 <MenuItem Header="Change default download folder" Command="{Binding BrowseCommand}" />
+                <MenuItem Header="Advanced settings are below the URL box" IsEnabled="False" />
             </MenuItem>
             <MenuItem Header="Help">
                 <MenuItem Header="About Fetch and supported features" Command="{Binding AboutCommand}" />
@@ -83,7 +84,8 @@
             </DockPanel>
         </Border>
 
-        <Border Grid.Row="2" Background="#192B40" Padding="17,11" BorderBrush="#2B4359" BorderThickness="0,0,0,1">
+        <StackPanel Grid.Row="2">
+        <Border Background="#192B40" Padding="17,11" BorderBrush="#2B4359" BorderThickness="0,0,0,1">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -117,6 +119,38 @@
                         Background="{StaticResource Accent}" Foreground="#102635" Margin="8,0,0,0" />
             </Grid>
         </Border>
+
+            <Expander Header="Advanced options: speed, connections, checksum, schedule" IsExpanded="False"
+                      Foreground="#D6E9F5" Background="#192B40" Padding="17,6,17,8">
+                <StackPanel>
+                    <WrapPanel Margin="4,7,0,4">
+                        <TextBlock Text="Connections / job (1–32)" VerticalAlignment="Center" Foreground="#D4E6F4" />
+                        <TextBox Text="{Binding ConnectionsText, UpdateSourceTrigger=PropertyChanged}" Width="46" Margin="8,0,20,0"
+                                 ToolTip="For newly added direct downloads; servers may limit available connections" />
+                        <TextBlock Text="Concurrent jobs (1–8)" VerticalAlignment="Center" Foreground="#D4E6F4" />
+                        <TextBox Text="{Binding ConcurrentText, UpdateSourceTrigger=PropertyChanged}" Width="46" Margin="8,0,20,0"
+                                 ToolTip="Change requires restarting Fetch" />
+                        <TextBlock Text="Global limit (KiB/s; 0 = unlimited)" VerticalAlignment="Center" Foreground="#D4E6F4" />
+                        <TextBox Text="{Binding RateLimitText, UpdateSourceTrigger=PropertyChanged}" Width="95" Margin="8,0,9,0" />
+                        <Button Content="Save limits" Command="{Binding ApplyPreferencesCommand}" />
+                    </WrapPanel>
+                    <WrapPanel Margin="4,4,0,4">
+                        <TextBlock Text="Expected SHA-256 for next direct download (optional)" VerticalAlignment="Center"
+                                   Foreground="#D4E6F4" />
+                        <TextBox Width="450" Margin="10,0,0,0" ToolTip="64-digit hex SHA-256; checked before final file is saved"
+                                 Text="{Binding ExpectedSha256Text, UpdateSourceTrigger=PropertyChanged}" />
+                    </WrapPanel>
+                    <WrapPanel Margin="4,4,0,0">
+                        <TextBlock Text="Schedule selected download (local time)" VerticalAlignment="Center" Foreground="#D4E6F4" />
+                        <TextBox Width="160" Margin="10,0,8,0" ToolTip="yyyy-MM-dd HH:mm"
+                                 Text="{Binding ScheduleText, UpdateSourceTrigger=PropertyChanged}" />
+                        <Button Content="Schedule start" Command="{Binding ScheduleCommand}" />
+                        <Button Content="Clear schedule" Command="{Binding ClearScheduleCommand}" />
+                        <TextBlock Text="Requires Fetch to stay open" VerticalAlignment="Center" Margin="12,0,0,0" Foreground="#99B6C7" />
+                    </WrapPanel>
+                </StackPanel>
+            </Expander>
+        </StackPanel>
 
         <Grid Grid.Row="3" Margin="14,13,14,6">
             <Grid.ColumnDefinitions>
@@ -272,7 +306,7 @@
         <Border Grid.Row="5" Background="#0C1725" Padding="16,5">
             <DockPanel>
                 <TextBlock Text="{Binding SummaryText}" Foreground="#B9CDE0" VerticalAlignment="Center" />
-                <TextBlock Text="Direct HTTP(S) • TLS verification enabled • Downloads are never silently overwritten"
+                <TextBlock Text="Direct HTTP(S) • TLS verified • SHA-256 available • No silent overwrite"
                            DockPanel.Dock="Right" Foreground="#7D9AAF" HorizontalAlignment="Right" VerticalAlignment="Center" />
             </DockPanel>
         </Border>

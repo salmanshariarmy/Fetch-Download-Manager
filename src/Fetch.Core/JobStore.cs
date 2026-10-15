@@ -9,6 +9,7 @@ public sealed class JobStore
     public string PartsFolder => Path.Combine(DataFolder, "parts");
     public string JobsPath => Path.Combine(DataFolder, "jobs.json");
     public string SettingsPath => Path.Combine(DataFolder, "settings.json");
+    public string PreferencesPath => Path.Combine(DataFolder, "preferences.json");
 
     public JobStore(string? dataFolder = null)
     {
@@ -57,6 +58,32 @@ public sealed class JobStore
     public void SaveDownloadDirectory(string folder)
     {
         lock (_lock) SaveAtomic(SettingsPath, JsonSerializer.Serialize(folder));
+    }
+
+    public DownloadPreferences LoadPreferences()
+    {
+        lock (_lock)
+        {
+            if (!File.Exists(PreferencesPath)) return new DownloadPreferences();
+            try
+            {
+                var preferences = JsonSerializer.Deserialize<DownloadPreferences>(File.ReadAllText(PreferencesPath))
+                    ?? new DownloadPreferences();
+                preferences.Validate();
+                return preferences;
+            }
+            catch (Exception ex) when (ex is IOException or JsonException or ArgumentOutOfRangeException)
+            {
+                // Keep the damaged file for recovery. Never delete the user's choices.
+                return new DownloadPreferences();
+            }
+        }
+    }
+
+    public void SavePreferences(DownloadPreferences preferences)
+    {
+        preferences.Validate();
+        lock (_lock) SaveAtomic(PreferencesPath, JsonSerializer.Serialize(preferences, JsonOptions));
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };

@@ -142,11 +142,46 @@ static class Program
             Assert.That(SegmentPlan.Recommend(999_999, false) == 1, "no range support");
         });
 
+        Unit("Preferences validate ranges", () =>
+        {
+            var value = new DownloadPreferences { DesiredConnections = 16, MaxConcurrentJobs = 4, RateLimitKiB = 512 };
+            value.Validate();
+            bool invalid = false;
+            try { new DownloadPreferences { DesiredConnections = 0 }.Validate(); }
+            catch (ArgumentOutOfRangeException) { invalid = true; }
+            Assert.That(invalid, "invalid connection count rejected");
+        });
+        Unit("Schedule parses local time", () =>
+        {
+            Assert.That(SchedulePolicy.TryParseLocal("2030-01-08 09:30", out var when), "parse date and time");
+            Assert.That(SchedulePolicy.IsDue(when, when), "at target time is due");
+            Assert.That(!SchedulePolicy.IsDue(when, when.AddMinutes(-1)), "not before start time");
+            Assert.That(!SchedulePolicy.TryParseLocal("Friday at noon", out _), "reject ambiguous time");
+        });
+        Unit("SHA-256 validation and limiter settings", () =>
+        {
+            Assert.That(HashVerifier.IsValidSha256(null), "checksum optional");
+            Assert.That(HashVerifier.IsValidSha256(new string('a', 64)), "valid SHA-256");
+            Assert.That(!HashVerifier.IsValidSha256("bad"), "reject malformed hash");
+            var limiter = new BandwidthLimiter(128);
+            Assert.That(limiter.LimitKiB == 128, "limiter initialized");
+            limiter.SetLimit(0);
+            Assert.That(limiter.LimitKiB == 0, "limit updated");
+        });
+
         string root = Path.Combine(Path.GetTempPath(), "FetchTests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
             var store = new JobStore(Path.Combine(root, "data"));
+            var settings = new DownloadPreferences { DesiredConnections = 5, MaxConcurrentJobs = 2, RateLimitKiB = 256 };
+            store.SavePreferences(settings);
+            var restoredSettings = store.LoadPreferences();
+            Assert.That(restoredSettings.DesiredConnections == 5 &&
+                restoredSettings.MaxConcurrentJobs == 2 && restoredSettings.RateLimitKiB == 256,
+                "preferences persist and reload");
+            Console.WriteLine("PASS  Persistent download preferences"); _passed++;
+
             var persisted = new DownloadItem { Url = "https://example.com/file", Status = JobStatus.Downloading };
             store.Save(new[] { persisted });
             Assert.That(store.Load().Single().Status == JobStatus.Paused, "restore as paused");
@@ -176,6 +211,30 @@ static class Program
                 "resume + merge exact bytes");
             Assert.That(job.SegmentCount > 1, "segmentation enabled");
             Console.WriteLine("PASS  Local HTTP range transfer, resume, and byte-perfect merge"); _passed++;
+            string correctHash = Convert.ToHexString(SHA256.HashData(payload));
+            var verifiedJob = new DownloadItem
+            {
+                Url = server.Url, FileName = "verified.bin", SaveDirectory = job.SaveDirectory,
+                ExpectedSha256 = correctHash, RequestedConnections = 2
+            };
+            var verifiedResult = await downloader.DownloadAsync(verifiedJob, null, null, CancellationToken.None);
+            Assert.That(File.Exists(verifiedResult.SavedPath), "checksum verified before saving file");
+            Assert.That(verifiedJob.SegmentCount == 2, "respects requested connection count");
+            Console.WriteLine("PASS  Correct SHA-256 and requested connections"); _passed++;
+
+            var wrongJob = new DownloadItem
+            {
+                Url = server.Url, FileName = "wronghash.bin", SaveDirectory = job.SaveDirectory,
+                ExpectedSha256 = new string('0', 64)
+            };
+            bool hashRejected = false;
+            try { await downloader.DownloadAsync(wrongJob, null, null, CancellationToken.None); }
+            catch (IOException ex) when (ex.Message.Contains("SHA-256 mismatch")) { hashRejected = true; }
+            Assert.That(hashRejected, "incorrect hash rejected");
+            Assert.That(!File.Exists(Path.Combine(job.SaveDirectory, "wronghash.bin")), "wrong file not exposed");
+            Assert.That(Directory.EnumerateFiles(Path.Combine(store.PartsFolder, wrongJob.Id.ToString("N")),
+                    "seg-*.part").Any(), "parts kept for inspection/recovery");
+            Console.WriteLine("PASS  SHA-256 mismatch preserves parts and rejects final file"); _passed++;
 
             // Validator change must discard incompatible old partial bytes.
             server.ETag = "\"v2\"";
