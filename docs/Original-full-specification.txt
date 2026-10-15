@@ -1,0 +1,528 @@
+BUILD: "Fetch" — a full-featured Windows download manager cloning the complete
+functional surface of Internet Download Manager (IDM), version 1.0, shipping
+as a signed MSI installer.
+
+This prompt is the whole job: architecture, every module, every file, every
+requirement, and the acceptance criteria. No stubs. No TODOs. No "left as an
+exercise." Every module compiles and runs. Every feature listed is implemented
+or explicitly marked optional at the end.
+
+═══════════════════════════════════════════════════════════════════
+0. CONSTRAINTS
+═══════════════════════════════════════════════════════════════════
+- Target: Windows 10 22H2 and Windows 11, x64. Also builds for arm64.
+- Engine language: C++20. Compiler: MSVC 19.38+ (Visual Studio 2022 17.8+).
+- UI language: C# 12 on .NET 8, WPF. MVVM, no code-behind logic.
+- Build system: CMake 3.28+ generating Visual Studio 2022 solution.
+- Package: WiX v4 producing fetch.msi, per-user install (no admin prompt).
+- TLS verification ON by default. Override only with a visible warning.
+- No credential harvesting. No cookie exfiltration. No adware. No browser hijack.
+- No use of Internet Download Manager's name, logo, icons, or brand assets.
+  The product is called Fetch. It is not affiliated with Tonec Inc.
+- AMSI-scan every completed file via IAttachmentExecute before final rename.
+- Sanitize every server-provided filename. Reject path traversal, reserved
+  device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9), and control chars.
+
+═══════════════════════════════════════════════════════════════════
+1. PROJECT LAYOUT
+═══════════════════════════════════════════════════════════════════
+fetch/
+├── CMakeLists.txt                    top-level build
+├── README.md                         build + run + first-run guide
+├── LICENSE                           MIT
+├── .gitignore
+├── .github/
+│   └── workflows/build.yml           CI: build + test + MSI artifact
+├── proto/                            frozen contracts shared by all slices
+│   ├── ipc.h                         pipe protocol version + command names
+│   ├── job.h                         Job/Segment model structs
+│   ├── settings.h                    Settings model
+│   └── schema.sql                    SQLite DDL, canonical
+├── fetchd/                           engine (C++20)
+│   ├── CMakeLists.txt
+│   ├── main.cpp                      service entry, owns pipe + DB
+│   ├── engine/
+│   │   ├── engine.h/.cpp             orchestrator; owns the job map
+│   │   ├── job.h/.cpp                Job runtime wrapper over model
+│   │   ├── segmenter.h/.cpp          static + dynamic split
+│   │   ├── transfer.h/.cpp           one connection, one Range request
+│   │   ├── pool.h/.cpp               per-host + global connection caps
+│   │   ├── writer.h/.cpp             .part.N writer + finalizer + rename
+│   │   ├── verifier.h/.cpp           MD5/SHA-1/SHA-256
+│   │   ├── throttle.h/.cpp           token bucket, per-job + global
+│   │   ├── scheduler.h/.cpp          queue, concurrency, time windows
+│   │   └── categories.h/.cpp         auto-classify by ext + host
+│   ├── net/
+│   │   ├── http.h/.cpp               WinHTTP: HEAD, GET, Range, HTTP/2
+│   │   ├── ftp.h/.cpp                WinINet FTP/FTPS
+│   │   ├── tls.h/.cpp                SChannel verify + optional pinning
+│   │   ├── proxy.h/.cpp              system / manual / PAC / SOCKS5
+│   │   ├── auth.h/.cpp               Basic, Digest, NTLM, Bearer
+│   │   └── cookie.h/.cpp             per-job jar + browser import
+│   ├── store/
+│   │   ├── sqlite.h/.cpp             DB open, migrate, prepared statements
+│   │   ├── jobs_repo.h/.cpp          jobs + segments CRUD
+│   │   └── settings_repo.h/.cpp      settings + categories CRUD
+│   ├── media/
+│   │   ├── sniff.h/.cpp              detect m3u8/mpd/mp4 on page + net
+│   │   ├── ytdlp.h/.cpp              subprocess wrapper for yt-dlp
+│   │   ├── ffmpeg.h/.cpp             subprocess wrapper for mux
+│   │   └── pipeline.h/.cpp           stream -> mux -> final file
+│   ├── grabber/
+│   │   ├── crawl.h/.cpp              BFS crawler, depth + domain bounds
+│   │   ├── parse.h/.cpp              HTML link + resource extraction
+│   │   ├── rules.h/.cpp              include/exclude regex, depth caps
+│   │   └── rewrite.h/.cpp            rewrite relative links to local paths
+│   ├── clipboard/
+│   │   └── monitor.h/.cpp            watch clipboard for URLs
+│   ├── ipc/
+│   │   ├── pipe_server.h/.cpp        named-pipe server, JSON line framing
+│   │   ├── dispatch.h/.cpp           command -> handler table
+│   │   └── events.h/.cpp             event broadcast to subscribers
+│   ├── service/
+│   │   ├── win_service.h/.cpp        SCM integration (optional mode)
+│   │   └── autostart.h/.cpp          Run-key or Task Scheduler autostart
+│   └── cli/
+│       ├── CMakeLists.txt
+│       └── fetch.cpp                 fetch.exe CLI
+├── fetch-ui/                         WPF UI (C# 12, .NET 8)
+│   ├── Fetch.UI.csproj
+│   ├── App.xaml / App.xaml.cs
+│   ├── MainWindow.xaml / .cs         job grid
+│   ├── Views/
+│   │   ├── JobDetailView.xaml        segment map, log, connections
+│   │   ├── OptionsView.xaml          settings tree
+│   │   ├── AddUrlDialog.xaml         add with headers/cookies
+│   │   ├── SchedulerView.xaml        time-window scheduler
+│   │   ├── CategoryEditor.xaml       rules editor
+│   │   ├── MediaPicker.xaml          quality picker for streams
+│   │   └── GrabberWizard.xaml        site grabber wizard
+│   ├── ViewModels/
+│   │   ├── MainViewModel.cs
+│   │   ├── JobViewModel.cs
+│   │   ├── SegmentViewModel.cs
+│   │   ├── OptionsViewModel.cs
+│   │   ├── SchedulerViewModel.cs
+│   │   └── RelayCommand.cs
+│   ├── Services/
+│   │   ├── PipeClient.cs             connects \\.\pipe\fetchd, reconnect
+│   │   ├── IpcModels.cs              C# mirrors of proto/job.h
+│   │   ├── ThemeService.cs           light/dark, follow system
+│   │   ├── TrayService.cs            tray icon + mini progress bars
+│   │   └── ToastService.cs           Windows toast on completion
+│   └── Assets/
+│       └── fetch.ico                 original icon, not IDM's
+├── fetch-ext/                        browser extension (MV3)
+│   ├── manifest.json
+│   ├── background.js                 service worker; NM host bridge
+│   ├── content.js                    media sniffer overlay
+│   ├── interceptor.js                catch navigations / attachments
+│   ├── popup.html / popup.js         popup UI
+│   ├── options.html / options.js     ext settings
+│   ├── fetch-nm.json                 native messaging manifest
+│   └── icons/                        original icons
+├── fetch-nm/                         native messaging host (C++)
+│   ├── CMakeLists.txt
+│   └── main.cpp                      stdin/stdout <-> pipe bridge
+├── installer/
+│   ├── fetch.wxs                     WiX v4 MSI
+│   ├── components.wxs                component tree
+│   └── ui.wxs                        installer UI, license, install dir
+└── tests/
+    ├── CMakeLists.txt
+    ├── range_tests.cpp               byte-range math
+    ├── segmenter_tests.cpp           split + re-split + merge
+    ├── resume_tests.cpp              ETag change -> restart
+    ├── writer_tests.cpp              part concat + atomic rename
+    ├── pool_tests.cpp                caps + backoff
+    ├── sqlite_tests.cpp              migrate + CRUD
+    ├── ipc_tests.cpp                 pipe round-trip
+    └── grabber_tests.cpp             link extraction + rewrite
+
+═══════════════════════════════════════════════════════════════════
+2. BUILD SYSTEM
+═══════════════════════════════════════════════════════════════════
+
+CMakeLists.txt (top level):
+- cmake_minimum_required 3.28, C++20, Windows-only hard fail otherwise.
+- FetchContent pulls sqlite3 amalgamation and nlohmann/json.
+- Interface library `fetch_proto` exposes proto/ to every target.
+- add_subdirectory(fetchd), add_subdirectory(fetchd/cli), add_subdirectory(fetch-nm), add_subdirectory(tests).
+- Custom target `fetch-ui` runs `dotnet build fetch-ui/Fetch.UI.csproj -c Release -o build/ui`.
+- If wix is on PATH, custom target `installer` produces build/fetch.msi.
+- ctest picks up tests/ automatically.
+
+CI (.github/workflows/build.yml):
+- Runs on windows-2022.
+- Installs .NET 8, WiX v4.
+- Configures, builds Release, runs ctest, builds MSI.
+- Uploads fetchd.exe, fetch.exe, fetch-nm.exe, Fetch.UI.exe, fetch.msi as artifacts.
+
+═══════════════════════════════════════════════════════════════════
+3. FROZEN CONTRACTS (proto/)
+═══════════════════════════════════════════════════════════════════
+
+proto/schema.sql — canonical DDL. Tables: jobs, segments, settings,
+categories, plus indices. All timestamps are Unix seconds (INTEGER).
+Column set for jobs:
+  id, url, final_url, referer, user_agent, headers_json, total_bytes,
+  etag, last_modified, local_path, temp_dir, status, category, priority,
+  speed_limit, created_at, started_at, finished_at, error.
+Status enum (string): queued | running | paused | done | failed.
+Segment status enum (string): pending | running | done | failed.
+segments PK (job_id, idx), FK to jobs ON DELETE CASCADE.
+
+proto/job.h — structs Job and Segment mirroring the DDL exactly.
+Enums JobStatus and SegmentStatus with to_string() overloads.
+
+proto/ipc.h — protocol version constant FETCH_IPC_VERSION = 1, pipe name,
+command names, event names, and a one-line doc for each message shape.
+
+proto/settings.h — Settings struct with all keys the engine reads/writes:
+  download_dir, temp_dir, max_conns_global, max_conns_per_host,
+  default_segments, min_segment_bytes, max_concurrent_jobs,
+  retry_max, retry_base_ms, timeout_ms, user_agent, referer,
+  proxy_mode, proxy_url, proxy_pac, socks_url,
+  throttle_global_kbps, throttle_per_job_kbps, scheduler_windows,
+  autostart, tray_enabled, theme, clipboard_monitor, media_sniff,
+  browser_integration, verify_after_download, verify_algorithm,
+  amsi_scan, category_rules_json.
+
+proto/contract rules:
+- proto/ is owned by the integrator. Slices never edit it directly.
+- Any change bumps FETCH_IPC_VERSION and is announced to all consumers.
+
+═══════════════════════════════════════════════════════════════════
+4. ENGINE REQUIREMENTS (fetchd)
+═══════════════════════════════════════════════════════════════════
+
+4.1 PRE-FLIGHT (per job, before segmentation)
+- Send HEAD with configured UA, Referer, Cookies, custom headers, auth.
+- Read: Content-Length, Accept-Ranges, ETag, Last-Modified,
+  Content-Disposition, Content-Type, Content-Encoding.
+- Follow redirects up to 10 hops. Record final_url.
+- If Accept-Ranges: bytes and Content-Length >= min_segment_bytes * 2,
+  segment; otherwise single stream.
+- Chunked (no Content-Length): single stream, indeterminate progress.
+- If server returns Content-Encoding: gzip/br on a ranged resource,
+  disable segmentation (ranges on encoded bodies are meaningless).
+
+4.2 SEGMENTER
+- Default segments: 8. Configurable 1..32.
+- min_segment_bytes default 1 MiB; refuse to create a segment below this.
+- Each segment: Range: bytes=start-end inclusive.
+- Dynamic re-split: every 2s, if a running segment's rate is < 50% of the
+  fastest running segment and its remaining bytes >= 2*min_segment_bytes,
+  split its remaining range into two and hand the new tail to the pool.
+- Merge adjacent done segments into a single "done" span for the writer.
+- All math on int64_t. Byte offsets are absolute in the decoded file.
+
+4.3 CONNECTION POOL
+- Global cap (default 32), per-host cap (default 8), per-job cap (default 8).
+- Retries: 5 max, exponential backoff starting at 1s (1,2,4,8,16).
+- On drop mid-segment: reconnect, re-issue Range from last written+1,
+  verify ETag unchanged; if changed, restart the whole job.
+- Keep-alive on where the server advertises it.
+- All socket work on a dedicated thread pool; engine never blocks the
+  IPC thread.
+
+4.4 WRITER
+- Each segment writes to <file>.part.<N> in the temp dir.
+- On segment done: mark it closed; do not delete.
+- Finalizer: when all segments are done, concatenate in index order into
+  <file>.part, then fsync, then atomic MoveFileEx with MOVEFILE_REPLACE_EXISTING
+  to the final name.
+- On any error: leave .part and .part.N files on disk for resume.
+- Filenames sanitized: strip control chars, reject reserved names, cap to
+  255 chars, preserve extension, use Windows-safe chars only.
+
+4.5 VERIFIER
+- Optional MD5, SHA-1, or SHA-256.
+- Source of expected hash: server header (Digest, ETag-if-strong, or
+  Content-MD5), or user-supplied.
+- On mismatch: job status = failed, error = "hash mismatch", keep parts.
+- On match: proceed to final rename.
+
+4.6 PAUSE / RESUME
+- Every state change (status, per-segment written offset) is persisted to
+  SQLite before the state is considered committed.
+- Resume across app restart: on startup, any job in running state is
+  re-classified as paused, then resumed on demand.
+- Resume re-validates ETag via HEAD. Changed -> restart job. Same -> resume.
+- Resume across reboot is the same path as across restart.
+
+4.7 THROTTLE
+- Token bucket per job and global.
+- Limit in KB/s, 0 = unlimited.
+- Optional schedule: e.g. global limit 0 kbps 00:00-08:00, 512 kbps
+  08:00-24:00. Represented as JSON in settings.scheduler_windows.
+
+4.8 QUEUE / SCHEDULER
+- Max concurrent jobs: default 3, configurable 1..16.
+- Priority: higher first, FIFO within same priority.
+- Category rules auto-assign category by extension and/or host.
+- Time-window scheduler: a job can be scheduled to start and/or stop at
+  wall-clock windows; the scheduler wakes every 15s and acts.
+- Pause/resume/stop/remove via IPC, always consistent with persisted state.
+
+4.9 ENGINE ORCHESTRATION
+- One Engine instance owns: pool, scheduler, throttle, DB handle, event bus.
+- Engine::add_job(url, opts) -> job_id, persists, enqueues, returns.
+- Engine::pause/resume/stop/remove(job_id) are idempotent.
+- Engine::list_jobs()/get_job(id) return model structs.
+- Progress events emitted at most 4 Hz per job.
+- All errors are values, not exceptions, across module boundaries.
+
+═══════════════════════════════════════════════════════════════════
+5. NETWORK LAYER
+═══════════════════════════════════════════════════════════════════
+- HTTP/1.1 and HTTP/2 via WinHTTP. HTTPS via SChannel with system trust.
+- Optional SPKI pin per host, configured in settings.
+- FTP and FTPS via WinINet with explicit TLS.
+- Optional BitTorrent via libtorrent-rasterbar (OFF by default; build flag).
+- Optional Metalink parsing (OFF by default; build flag).
+- Proxy: system (WinHTTP default), manual URL, PAC URL, SOCKS5.
+- Auth: Basic, Digest, NTLM, Bearer; per-job credentials override global.
+- Cookies: per-job jar; import from Chrome/Edge/Firefox profiles by path;
+  never transmit cookies to hosts other than the job's host.
+- Custom headers per job: User-Agent, Referer, Cookie, Accept-Language,
+  and arbitrary key/value pairs.
+
+═══════════════════════════════════════════════════════════════════
+6. STORE (SQLite)
+═══════════════════════════════════════════════════════════════════
+- Single writer: the engine. No other process opens fetch.db.
+- WAL mode, synchronous=NORMAL.
+- Migrations: forward-only, numbered, recorded in a meta table.
+- Prepared statements cached per connection.
+- jobs_repo: insert_job, update_status, update_progress, update_etag,
+  list_jobs, get_job, delete_job.
+- settings_repo: get_setting, set_setting, get_all_settings,
+  list_categories, upsert_category, delete_category.
+
+═══════════════════════════════════════════════════════════════════
+7. IPC (UI and CLI and NM host <-> engine)
+═══════════════════════════════════════════════════════════════════
+- Pipe name \\.\pipe\fetchd. Multi-client. One thread per client.
+- Framing: newline-delimited UTF-8 JSON, one message per line.
+- Request: {"id":uint,"cmd":string,"args":object}
+- Response: {"id":uint,"ok":bool,"data":object,"error":string|null}
+- Event (pushed, no id): {"event":string,"data":object}
+- Commands: add_job, pause, resume, stop, remove, list_jobs, get_job,
+  get_settings, set_settings, subscribe_events.
+- Events: job_added, job_progress, job_done, job_failed.
+- Clients reconnect automatically on pipe drop with backoff (100ms..2s).
+- Server tolerates partial lines and oversized messages (cap 1 MiB/line).
+
+═══════════════════════════════════════════════════════════════════
+8. CLI (fetch.exe)
+═══════════════════════════════════════════════════════════════════
+Usage:
+  fetch add <url> [--out <path>] [--conns N] [--ref <url>]
+                  [--header "K: V"]... [--user-agent "<ua>"] [--category <c>]
+  fetch list [--json]
+  fetch pause <id>
+  fetch resume <id>
+  fetch stop <id>
+  fetch remove <id>
+  fetch status <id> [--json]
+  fetch settings get [<key>]
+  fetch settings set <key> <value>
+  fetch --silent <url> [--out <path>]
+Exit codes: 0 ok, 1 engine not running, 2 bad args, 3 server error.
+
+═══════════════════════════════════════════════════════════════════
+9. UI (WPF)
+═══════════════════════════════════════════════════════════════════
+- MVVM, no logic in code-behind, commands via RelayCommand.
+- MainWindow: DataGrid of jobs with columns Name, Size, Progress, Speed,
+  ETA, Status, Category, Added. Toolbar: Add URL, Start, Pause, Stop,
+  Remove, Options, Scheduler. Context menu mirrors toolbar.
+- JobDetailView: segment map (one horizontal bar per segment, colored by
+  status), live log, connections view (host, bytes, speed), properties
+  (URL, referer, cookies, headers, save path, ETag).
+- OptionsView: tree of Downloads, Connections, Proxy, Cookies, Categories,
+  Scheduler, Speed Limit, Browser Integration, Media, Advanced.
+- SchedulerView: list of windows, add/edit/delete, apply to global or job.
+- CategoryEditor: name, extensions, hosts, save dir, priority.
+- MediaPicker: quality/format list, mux target, subtitle selection.
+- GrabberWizard: seed URL, depth, same-domain toggle, include/exclude regex,
+  save root, preview of planned files.
+- TrayIcon: one mini progress bar per active job, right-click menu with
+  pause all, resume all, open main window, exit.
+- Theme: light and dark, follow system by default, override in Options.
+- Shortcuts: Ctrl+N add, Del remove, Space pause/resume, Ctrl+, options.
+- Completion toast via Windows notification API.
+- All UI text routed through a single Resources dictionary for i18n later.
+- UI reads and writes only through PipeClient. No direct DB, no spawning
+  of fetchd; if the pipe is missing, show "engine not running" + Start button.
+
+═══════════════════════════════════════════════════════════════════
+10. BROWSER INTEGRATION
+═══════════════════════════════════════════════════════════════════
+- Chrome, Edge, Brave, Opera via MV3 extension; Firefox via WebExtension.
+- Native messaging host fetch-nm.exe. Manifest:
+  name com.fetch.nm, path fetch-nm.exe, type stdio, allowed_origins
+  chrome-extension://<id>/.
+- Registration keys under HKCU:
+  Software\Google\Chrome\NativeMessagingHosts\com.fetch.nm
+  Software\Mozilla\NativeMessagingHosts\com.fetch.nm
+- Intercept triggers:
+  - Content-Disposition: attachment
+  - Content-Type in user media list (video/*, audio/*, application/octet-stream)
+  - Right-click -> "Download with Fetch"
+  - Alt+click on a link
+  - Media sniffer finds m3u8, mpd, or mp4 in the page or its network log
+- content.js overlay: "Download this video with Fetch" button appears on
+  pages with detected streams; click shows quality picker fetched from
+  the engine, then adds the job.
+- Clipboard monitor in fetchd: watches for URLs, emits a "clipboard_url"
+  event the UI may act on (never auto-adds).
+- The extension never reads page content beyond link/resource metadata and
+  never exfiltrates cookies to any host other than the job's own host.
+
+═══════════════════════════════════════════════════════════════════
+11. MEDIA PIPELINE
+═══════════════════════════════════════════════════════════════════
+- yt-dlp located next to fetchd or on PATH; version checked at startup.
+- ffmpeg located next to fetchd or on PATH; version checked at startup.
+- For HLS/DASH/YouTube: sniff -> yt-dlp --dump-json -> quality list ->
+  user picks -> yt-dlp downloads streams -> ffmpeg muxes into mp4 or mkv.
+- Subprocess output captured; progress parsed and forwarded as job_progress.
+- On subprocess error: job_failed with stderr tail in the error field.
+- Both binaries shipped with the installer under Fetch\bin\tools\ or
+  downloaded on first use with a user prompt; never silently.
+
+═══════════════════════════════════════════════════════════════════
+12. SITE GRABBER
+═══════════════════════════════════════════════════════════════════
+- Seed URL, depth limit (default 3), same-domain-only toggle (default on),
+  include/exclude regex lists, max total bytes, max pages.
+- BFS crawl with a visited set keyed by normalized URL.
+- Extract links from <a href>, <link href>, <script src>, <img src>,
+  <source src>, and CSS url() references.
+- Save each resource in a mirrored directory tree.
+- Rewrite relative and absolute-same-domain links to local paths.
+- Emit a manifest.json of seed, options, and resource map.
+- Respect robots.txt by default; override with a visible warning.
+- Rate-limit default 1 request per 200ms per host.
+
+═══════════════════════════════════════════════════════════════════
+13. SERVICE AND AUTOSTART
+═══════════════════════════════════════════════════════════════════
+- Default mode: fetchd runs as a per-user background process started by
+  the UI or CLI on first use, exits when idle for 5 minutes if no jobs.
+- Optional mode: register as a Windows service via SCM (installer option).
+- Autostart: Run-key entry or Task Scheduler task, user's choice.
+
+═══════════════════════════════════════════════════════════════════
+14. INSTALLER (WiX v4)
+═══════════════════════════════════════════════════════════════════
+- Per-user MSI, no admin prompt.
+- Installs to %LOCALAPPDATA%\Fetch\bin: fetchd.exe, fetch.exe,
+  fetch-nm.exe, Fetch.UI.exe, fetch-nm.json, fetch.ico, tools\yt-dlp.exe,
+  tools\ffmpeg.exe (if bundled).
+- Writes native messaging host registry keys under HKCU.
+- Creates Start Menu shortcut to Fetch.UI.exe.
+- Optional desktop shortcut.
+- Registers the service if the user chose that installer option.
+- Uninstall removes files, shortcuts, registry keys; leaves the user's
+  fetch.db unless a "purge data" checkbox was ticked.
+- Installer UI: welcome, license, install dir, options (service, autostart,
+  browser integration), progress, finish.
+
+═══════════════════════════════════════════════════════════════════
+15. SECURITY AND HONESTY (build-time constraints, not moral notes)
+═══════════════════════════════════════════════════════════════════
+- TLS verification always on unless the user explicitly toggles a visible
+  warning and confirms per-host.
+- No code path sends cookies, credentials, or file contents to any host
+  other than the job's own host, ever, including telemetry. There is no
+  telemetry.
+- No bundled adware, no browser hijack, no forced homepage, no bundled
+  search provider.
+- No IDM trademarks, icons, or UI clones; the icon is original.
+- Every completed file AMSI-scanned before the final rename; on detection
+  the job is marked failed and the file is left in the temp dir with a
+  clear name so the user can inspect or delete.
+- Filenames sanitized; path traversal rejected; reserved names rejected.
+- Subprocess launches use CreateProcessW with an explicit argv, never
+  a shell string.
+
+═══════════════════════════════════════════════════════════════════
+16. TESTING
+═══════════════════════════════════════════════════════════════════
+- Unit tests for: range math, segmenter split/re-split/merge, resume with
+  ETag change, writer concat + atomic rename, pool caps + backoff,
+  SQLite migrate + CRUD, IPC round-trip, grabber link extraction + rewrite.
+- Integration tests (marked [integration], skipped by default) exercise
+  the engine against a local HTTP server that supports Range, ETag, and
+  can be configured to drop connections mid-segment.
+- CI runs unit tests on every push; integration tests on demand.
+- No test uses the public internet.
+
+═══════════════════════════════════════════════════════════════════
+17. DELIVERABLES
+═══════════════════════════════════════════════════════════════════
+- Complete source tree exactly as in section 1.
+- CMakeLists.txt at top level and in each C++ subproject.
+- .csproj for fetch-ui.
+- proto/ headers and schema.sql.
+- extension manifest.json, background.js, content.js, popup, options,
+  fetch-nm.json.
+- installer/fetch.wxs (and components.wxs, ui.wxs).
+- tests/ tree with the tests above.
+- README.md: prerequisites, build steps, first run, extension load,
+  troubleshooting.
+- No stubs. No TODOs. No "left as exercise."
+- Every module complete and runnable.
+- Green CI on the initial commit.
+
+═══════════════════════════════════════════════════════════════════
+18. BUILD ORDER (slices — for parallel or staged work)
+═══════════════════════════════════════════════════════════════════
+Slice 0  — repo seed: CMake, proto/, README, .gitignore, LICENSE, CI, installer skeleton
+Slice 1  — fetchd engine + SQLite + CLI (headless, no UI, no ext)
+Slice 2  — WPF UI + named-pipe client
+Slice 3  — browser extension + native messaging host
+Slice 4  — media pipeline (yt-dlp + ffmpeg wrappers, sniff, pipeline)
+Slice 5  — site grabber
+Slice 6  — installer polish, service mode, autostart, packaging
+Slice 7  — integration tests + hardening pass
+
+Each slice ships as a PR. proto/ and top-level CMakeLists.txt are owned by
+the integrator; slices never edit them without an announced version bump.
+
+═══════════════════════════════════════════════════════════════════
+19. ACCEPTANCE CRITERIA (v1.0 shipped when all true)
+═══════════════════════════════════════════════════════════════════
+[ ] `cmake -B build && cmake --build build --config Release` succeeds.
+[ ] `ctest --test-dir build -C Release` is green.
+[ ] `fetchd.exe` starts, opens the pipe, and serves `fetch list`.
+[ ] `fetch add <a large ranged URL>` splits into 8 segments, completes,
+    and the final file's SHA-256 matches the server's.
+[ ] Killing fetchd mid-download and restarting resumes from the byte
+    offset and completes; ETag changed -> restart instead of corrupt file.
+[ ] The WPF UI shows live progress, segment map, and per-job log.
+[ ] The extension intercepts an attachment, right-click, and an m3u8 page,
+    each adding a job through the pipe.
+[ ] yt-dlp + ffmpeg path produces a playable mp4 from a muxed stream.
+[ ] Site grabber mirrors a small static site to a local directory tree
+    with rewritten links.
+[ ] `fetch.msi` installs per-user, registers the NM host, creates the
+    Start Menu shortcut, and uninstalls cleanly.
+[ ] No telemetry. No credential or cookie exfiltration. TLS on by default.
+[ ] No IDM name, icon, or asset used anywhere in the tree.
+
+═══════════════════════════════════════════════════════════════════
+20. OPTIONAL / LATER
+═══════════════════════════════════════════════════════════════════
+- BitTorrent via libtorrent-rasterbar.
+- Metalink.
+- Multi-user shared service mode with per-user job isolation.
+- Localization (en-US shipped; framework ready for more).
+- Plugin system for site-specific extractors.
+- Command palette in the UI.
+- Headless REST API on top of the pipe for scripting.
+
+END OF PROMPT.

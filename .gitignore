@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+.vs/
+.idea/
+artifacts/
+*.user
+*.suo
+*.pfx
+*.p12
+*.snk
+.DS_Store

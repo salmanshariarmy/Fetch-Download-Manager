@@ -1,0 +1,129 @@
+<Window x:Class="Fetch.Desktop.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Fetch — Download Manager" Width="1060" Height="685" MinWidth="760" MinHeight="500"
+    WindowStartupLocation="CenterScreen" Background="{StaticResource Surface}" Foreground="White"
+    FontFamily="Segoe UI" FontSize="13">
+    <Window.InputBindings>
+        <KeyBinding Command="{Binding AddCommand}" Key="Return" Modifiers="Control" />
+        <KeyBinding Command="{Binding PauseCommand}" Key="P" Modifiers="Control" />
+        <KeyBinding Command="{Binding ResumeCommand}" Key="R" Modifiers="Control" />
+        <KeyBinding Command="{Binding RemoveCommand}" Key="Delete" />
+    </Window.InputBindings>
+    <Grid Margin="28,21,28,22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <DockPanel Grid.Row="0" Margin="0,0,0,22">
+            <StackPanel DockPanel.Dock="Left">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="⇣" FontWeight="Bold" Foreground="{StaticResource Accent}"
+                               FontSize="32" VerticalAlignment="Center" Margin="0,0,9,0" />
+                    <TextBlock Text="Fetch" FontSize="30" FontWeight="Bold" VerticalAlignment="Center" />
+                    <TextBlock Text="  download manager" Foreground="#91A5B8" FontSize="14"
+                               VerticalAlignment="Bottom" Margin="0,0,0,7" />
+                </StackPanel>
+                <TextBlock Text="Direct HTTP and HTTPS downloads, with pause, resume, and multiple connections"
+                           Foreground="#A9B8CA" Margin="2,4,0,0" />
+            </StackPanel>
+        </DockPanel>
+        <Border Grid.Row="1" Background="{StaticResource CardSurface}" CornerRadius="12" Padding="17" Margin="0,0,0,13">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                    <TextBlock Text="FILE URL" Foreground="#9CB0C7" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,8" />
+                    <TextBox x:Name="UrlBox" Text="{Binding UrlInput, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="Paste a direct HTTP or HTTPS file URL" />
+                </StackPanel>
+                <Button Grid.Column="1" Content="＋  Add download" Command="{Binding AddCommand}"
+                        Background="{StaticResource Accent}" Foreground="#09222A"
+                        VerticalAlignment="Bottom" Padding="20,10" Margin="0" />
+            </Grid>
+        </Border>
+        <DockPanel Grid.Row="2" Margin="1,0,0,13" LastChildFill="False">
+            <Button DockPanel.Dock="Left" Content="▶  Resume / Start" Command="{Binding ResumeCommand}" />
+            <Button DockPanel.Dock="Left" Content="Ⅱ  Pause" Command="{Binding PauseCommand}" />
+            <Button DockPanel.Dock="Left" Content="✕  Remove" Command="{Binding RemoveCommand}" />
+            <TextBlock DockPanel.Dock="Right" Text="{Binding JobCountText}" Foreground="#A9B8CA"
+                       VerticalAlignment="Center" />
+        </DockPanel>
+        <Border Grid.Row="3" CornerRadius="12" Background="{StaticResource CardSurface}" Padding="7">
+            <DataGrid x:Name="JobsGrid" ItemsSource="{Binding Jobs}" SelectedItem="{Binding SelectedJob}"
+                AutoGenerateColumns="False" Background="Transparent" Foreground="White" BorderThickness="0"
+                RowBackground="#1D2B40" AlternatingRowBackground="#22334A" GridLinesVisibility="None"
+                SelectionMode="Single" SelectionUnit="FullRow" HeadersVisibility="Column"
+                CanUserAddRows="False" IsReadOnly="True" ColumnHeaderHeight="41" RowHeight="49"
+                HorizontalGridLinesBrush="#354A65" VerticalGridLinesBrush="#354A65">
+                <DataGrid.Resources>
+                    <Style TargetType="DataGridColumnHeader">
+                        <Setter Property="Background" Value="#263850" />
+                        <Setter Property="Foreground" Value="#B5C8DA" />
+                        <Setter Property="Padding" Value="12,8" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="FontWeight" Value="SemiBold" />
+                    </Style>
+                    <Style TargetType="DataGridCell">
+                        <Setter Property="Foreground" Value="White" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="Padding" Value="10,6" />
+                    </Style>
+                    <Style TargetType="DataGridRow">
+                        <Setter Property="Foreground" Value="White" />
+                        <Setter Property="Background" Value="#1D2B40" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Style.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="#335C69" />
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </DataGrid.Resources>
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="File name" Binding="{Binding Name}" Width="2.5*" />
+                    <DataGridTextColumn Header="Size" Binding="{Binding SizeText}" Width="0.9*" />
+                    <DataGridTemplateColumn Header="Progress" Width="1.8*">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="2,3">
+                                    <TextBlock Text="{Binding ProgressText}" FontSize="11" Margin="0,0,0,5" />
+                                    <ProgressBar Minimum="0" Maximum="100" Value="{Binding ProgressPercent}"
+                                                 Height="7" Background="#3B4C64" Foreground="{StaticResource Accent}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="Speed" Binding="{Binding SpeedText}" Width="1*" />
+                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="1*" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+        <Border Grid.Row="4" Background="{StaticResource CardSurface}" CornerRadius="10"
+                Margin="0,13,0,10" Padding="15,12">
+            <StackPanel>
+                <DockPanel LastChildFill="False">
+                    <TextBlock Text="SAVE TO" Foreground="#9CB0C7" FontWeight="SemiBold"
+                               FontSize="11" VerticalAlignment="Center" />
+                    <Button Content="Change folder…" Command="{Binding BrowseCommand}"
+                            DockPanel.Dock="Right" Margin="10,0,0,0" Padding="11,5" />
+                    <Button Content="Open folder" Command="{Binding OpenFolderCommand}"
+                            DockPanel.Dock="Right" Margin="10,0,0,0" Padding="11,5" />
+                </DockPanel>
+                <TextBlock Text="{Binding DownloadFolder}" Foreground="#D5E2EC" Margin="0,6,0,0"
+                           TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+        </Border>
+        <StackPanel Grid.Row="5" Orientation="Vertical" Margin="2,0">
+            <TextBlock Text="{Binding SelectedError}" Foreground="#F5A89E" TextWrapping="Wrap" />
+            <TextBlock Text="Ctrl+Enter add • Ctrl+P pause • Ctrl+R resume • Del remove   |   Only download files you trust."
+                       Foreground="#8499AE" Margin="0,5,0,0" FontSize="11" />
+        </StackPanel>
+    </Grid>
+</Window>
