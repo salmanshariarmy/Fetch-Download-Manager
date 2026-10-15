@@ -23,6 +23,12 @@ public sealed class TransferEngine : IDisposable
         public RangeNotHonoredException() : base("The server ignored or changed the requested byte range.") { }
     }
 
+    private sealed class NonRetryableHttpException : IOException
+    {
+        public NonRetryableHttpException(HttpStatusCode status)
+            : base($"HTTP {(int)status} ({status}). The server rejected this download; it will not be retried automatically.") { }
+    }
+
     private sealed class ProgressCounter
     {
         private long _bytes;
@@ -291,6 +297,21 @@ public sealed class TransferEngine : IDisposable
                 }
                 using var response = await _http.SendAsync(request,
                     HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                {
+                    if (attempt < 4 && HttpRetryPolicy.IsRetryable(response.StatusCode))
+                    {
+                        var wait = HttpRetryPolicy.Delay(attempt, response.Headers.RetryAfter);
+                        await Task.Delay(wait, ct).ConfigureAwait(false);
+                        continue;
+                    }
+                    throw new NonRetryableHttpException(response.StatusCode);
+                }
+                // The server must not silently change a strong validator mid-transfer.
+                if (remote.ETag is { Length: > 0 } expectedETag &&
+                    response.Headers.ETag is { IsWeak: false } returnedETag &&
+                    !string.Equals(returnedETag.Tag, expectedETag, StringComparison.Ordinal))
+                    throw new RangeNotHonoredException();
                 if (seek && range.HasValue)
                 {
                     if (response.StatusCode != HttpStatusCode.PartialContent ||
@@ -329,6 +350,7 @@ public sealed class TransferEngine : IDisposable
                 return;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (NonRetryableHttpException) { throw; }
             catch (RangeNotHonoredException) { throw; }
             catch (Exception ex) when (ex is HttpRequestException or IOException or TaskCanceledException)
             {

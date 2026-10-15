@@ -56,5 +56,8 @@ async function send(url) {
   capture = true;
   await createdHandler({id:2,url:'https://example.com/b.zip'});
   assert.deepEqual(canceled,[2]);
+  await createdHandler({id:3,url:'https://example.com/watch',mime:'text/html'});
+  await createdHandler({id:4,url:'https://example.com/index.html',mime:'application/octet-stream'});
+  assert.deepEqual(canceled,[2],'HTML page downloads must stay in the browser');
   console.log('PASS: browser extension context menu, URL filtering, native messaging, opt-in capture');
 })().catch(error=>{console.error(error);process.exitCode=1;});

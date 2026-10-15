@@ -20,6 +20,10 @@ sealed class LocalRangeServer : IAsyncDisposable
     private readonly Task _accepting;
     public string Url { get; }
     public string ETag { get; set; } = "\"v1\"";
+    public int RejectFirstGets { get; set; }
+    public HttpStatusCode? RejectAllGetsWith { get; set; }
+    private int _getCount;
+    public int GetCount => Volatile.Read(ref _getCount);
 
     public LocalRangeServer(byte[] data)
     {
@@ -60,6 +64,20 @@ sealed class LocalRangeServer : IAsyncDisposable
                         range = line[6..].Trim();
                     if (line.StartsWith("If-Range:", StringComparison.OrdinalIgnoreCase))
                         ifRange = line[9..].Trim();
+                }
+                if (method.Equals("GET", StringComparison.OrdinalIgnoreCase))
+                {
+                    int received = Interlocked.Increment(ref _getCount);
+                    var rejected = RejectAllGetsWith ??
+                        (received <= RejectFirstGets ? HttpStatusCode.ServiceUnavailable : (HttpStatusCode?)null);
+                    if (rejected is { } status)
+                    {
+                        string statusLine = $"HTTP/1.1 {(int)status} {status}\r\n";
+                        byte[] failure = Encoding.ASCII.GetBytes(statusLine +
+                            "Retry-After: 0\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                        await stream.WriteAsync(failure);
+                        return;
+                    }
                 }
                 int from = 0, to = _data.Length - 1;
                 bool partial = range != null && (ifRange == null || ifRange == ETag);
@@ -128,6 +146,16 @@ static class Program
             Assert.That(!MediaDownloader.IsKnownMediaUrl("https://example.com/archive.zip"), "direct file");
             Assert.That(!MediaDownloader.IsKnownMediaUrl("javascript:alert(1)"), "reject JS URL");
             Assert.That(MediaDownloader.FormatForQuality("720p").Contains("height<=720"), "quality bound");
+        });
+        Unit("HTTP retry policy distinguishes permanent from temporary failures", () =>
+        {
+            Assert.That(HttpRetryPolicy.IsRetryable(HttpStatusCode.ServiceUnavailable), "503 transient");
+            Assert.That(HttpRetryPolicy.IsRetryable((HttpStatusCode)429), "429 transient");
+            Assert.That(!HttpRetryPolicy.IsRetryable(HttpStatusCode.NotFound), "404 permanent");
+            Assert.That(!HttpRetryPolicy.IsRetryable(HttpStatusCode.Forbidden), "403 permanent");
+            Assert.That(HttpRetryPolicy.Delay(2, null) == TimeSpan.FromSeconds(4), "backoff bound");
+            var after = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(120));
+            Assert.That(HttpRetryPolicy.Delay(0, after) == TimeSpan.FromSeconds(30), "Retry-After capped");
         });
         Unit("Media progress parsing", () =>
         {
@@ -235,6 +263,36 @@ static class Program
             Assert.That(Directory.EnumerateFiles(Path.Combine(store.PartsFolder, wrongJob.Id.ToString("N")),
                     "seg-*.part").Any(), "parts kept for inspection/recovery");
             Console.WriteLine("PASS  SHA-256 mismatch preserves parts and rejects final file"); _passed++;
+
+            // Temporary server errors are retried and permanent errors fail promptly.
+            await using (var transientServer = new LocalRangeServer(payload) { RejectFirstGets = 2 })
+            {
+                var transientJob = new DownloadItem
+                {
+                    Url = transientServer.Url, FileName = "transient.bin", SaveDirectory = job.SaveDirectory,
+                    RequestedConnections = 1
+                };
+                var transientResult = await downloader.DownloadAsync(transientJob, null, null, CancellationToken.None);
+                Assert.That(File.ReadAllBytes(transientResult.SavedPath).SequenceEqual(payload),
+                    "retries preserve the exact file bytes");
+                Assert.That(transientServer.GetCount == 3, "two transient failures followed by success");
+                Console.WriteLine("PASS  HTTP 503 retries then completes without corruption"); _passed++;
+            }
+            await using (var missingServer = new LocalRangeServer(payload)
+                         { RejectAllGetsWith = HttpStatusCode.NotFound })
+            {
+                var missingJob = new DownloadItem
+                {
+                    Url = missingServer.Url, FileName = "never.bin", SaveDirectory = job.SaveDirectory,
+                    RequestedConnections = 1
+                };
+                bool rejected = false;
+                try { await downloader.DownloadAsync(missingJob, null, null, CancellationToken.None); }
+                catch (IOException ex) when (ex.Message.Contains("HTTP 404")) { rejected = true; }
+                Assert.That(rejected, "non-retryable HTTP failure reported clearly");
+                Assert.That(missingServer.GetCount == 1, "404 is not retried");
+                Console.WriteLine("PASS  HTTP 404 fails without pointless retries"); _passed++;
+            }
 
             // Validator change must discard incompatible old partial bytes.
             server.ETag = "\"v2\"";

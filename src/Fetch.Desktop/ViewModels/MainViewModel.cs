@@ -515,9 +515,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     }
 
     private static void About() => System.Windows.MessageBox.Show(
-        "Fetch Download Manager 0.5 — Community Edition\n\n" +
+        "Fetch Download Manager 0.6 — Community Edition\n\n" +
         "Direct HTTP(S) downloads, multi-part transfer, resume, categories and queue controls.\n\n" +
-        "Chrome/Edge extension: manual link forwarding and opt-in download capture.\n" +
+        "Chrome/Edge extension: manual link forwarding, opt-in capture and direct video buttons.\n" +
         "Media downloads require user-installed yt-dlp and optional FFmpeg.\n" +
         "Scheduled starts, configurable connections, speed limit and optional SHA-256 are available.\n" +
         "A full site grabber, FTP and complete browser interception are not included.\n" +

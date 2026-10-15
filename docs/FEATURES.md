@@ -1,4 +1,4 @@
-# Fetch v0.5 feature status
+# Fetch v0.6 feature status
 
 This source is a functional incremental **C#/.NET 8 WPF** download manager, **not** a full IDM replacement. The original requirements file is an ambitious target, not a list of already delivered features.
 
@@ -7,7 +7,7 @@ This source is a functional incremental **C#/.NET 8 WPF** download manager, **no
 | Windows 10/11 x64 WPF app | Implemented; Windows build required |
 | HTTP(S) downloads with TLS verification | Implemented |
 | Multi-part HTTP transfers (1–32, server-dependent) | Implemented; configured for new jobs |
-| Bounded retry, range integrity, ETag/Last-Modified resume | Implemented, subject to server support |
+| Bounded retry, range integrity, ETag/Last-Modified resume | Implemented; v0.6 distinguishes transient 408/429/503 etc. from permanent 403/404; bounded Retry-After |
 | Disk-backed history and paused downloads | Implemented via JSON files |
 | Categories, filtering, queue pause/resume, completion history | Implemented |
 | Global HTTP speed limit | New v0.5, token bucket; not applied to yt-dlp |
@@ -18,7 +18,8 @@ This source is a functional incremental **C#/.NET 8 WPF** download manager, **no
 | Automatic browser download interception | Experimental opt-in only; not all sites |
 | Media download using external yt-dlp and FFmpeg | Partial v0.4, separate user-installed tools |
 | Firefox integration | Not implemented |
-| Video sniffing overlay / format preview | Not implemented |
+| HTML5 direct-media hover button | Opt-in v0.6; supports exposed HTTP(S) video/audio src only, no blob/DRM |
+| Deep network sniffing / video format preview | Not implemented |
 | Browser authentication/cookie session forwarding | Not implemented |
 | Dedicated C++20 engine, SQLite, IPC CLI, WiX MSI | Not implemented; currently C# WPF and JSON |
 | FTP/FTPS, manual proxies, credential managers | Not implemented |
@@ -38,4 +39,4 @@ This source is a functional incremental **C#/.NET 8 WPF** download manager, **no
 
 ## Testing
 
-CI builds the desktop and native host, executes core unit/local HTTP integration tests and a JavaScript browser bridge smoke test, publishes both applications, and compiles Inno Setup. Passing CI is necessary, not proof of complete feature parity.
+CI builds the desktop and native host, executes core unit/local HTTP integration tests and JavaScript browser bridge and media UI smoke tests, publishes both applications, and compiles Inno Setup. Passing CI is necessary, not proof of complete feature parity.

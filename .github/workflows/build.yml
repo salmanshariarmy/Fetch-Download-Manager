@@ -38,7 +38,10 @@ jobs:
         run: |
           node --check browser-extension/background.js
           node --check browser-extension/popup.js
+          node --check browser-extension/media-utils.js
+          node --check browser-extension/content.js
           node tests/browser-extension/bridge-smoke.cjs
+          node tests/browser-extension/media-smoke.cjs
 
       - name: Publish for Windows x64 (self-contained)
         shell: pwsh

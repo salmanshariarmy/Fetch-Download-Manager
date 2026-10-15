@@ -41,8 +41,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // forwarding. Cancel Chrome's download ONLY AFTER Fetch confirms accepting it.
 chrome.downloads.onCreated.addListener(async (item) => {
   const settings = await chrome.storage.local.get({captureDownloads:false});
-  if (!settings.captureDownloads || !validUrl(item.finalUrl || item.url)) return;
-  const response = await sendToFetch(item.finalUrl || item.url);
+  const url = item.finalUrl || item.url;
+  // Only intercept actual downloadable resources, not HTML/JSON pages or links
+  // the user intended the browser to handle. Do not intercept this extension's
+  // own downloads (should one be created in a future version).
+  if (!settings.captureDownloads || !validUrl(url) || (chrome.runtime.id && item.byExtensionId === chrome.runtime.id)) return;
+  const mime = (item.mime || "").toLowerCase();
+  if (/^(text\/html|application\/(json|xhtml\+xml))/.test(mime)) return;
+  const pathname = new URL(url).pathname.toLowerCase();
+  if (/\.(html?|xhtml|json)$/.test(pathname)) return;
+  const response = await sendToFetch(url);
   if (response.ok) {
     try { await chrome.downloads.cancel(item.id); }
     catch (_) { /* Browser may already have completed; never erase the user's file. */ }

@@ -26,3 +26,12 @@ $("url").addEventListener("keydown",e=>{if(e.key==="Enter")$("send").click();});
 chrome.storage.session.get({lastResult:null}, ({lastResult}) => {
   if(lastResult?.message) status(lastResult.message, !lastResult.ok);
 });
+
+chrome.storage.local.get({videoButtons:false}, settings => {
+  $("videoButtons").checked = !!settings.videoButtons;
+});
+$("videoButtons").addEventListener("change", () => {
+  const enabled = $("videoButtons").checked;
+  chrome.storage.local.set({videoButtons:enabled});
+  status(enabled ? "Direct HTML5 media buttons enabled. Reload your tab if needed." : "Media buttons disabled.");
+});

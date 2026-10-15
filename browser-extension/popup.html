@@ -6,5 +6,7 @@
 <button id="send">Download with Fetch</button>
 <p id="status" role="status" aria-live="polite">Use the right-click menu on a file link, or paste its URL here.</p>
 <hr><label class="toggle"><input id="capture" type="checkbox"> Capture browser downloads automatically</label>
-<p class="note">Experimental. Off by default. Chrome/Edge only. This does not capture YouTube videos or protected streams.</p>
+<p class="note">Experimental: Fetch must confirm the job before the browser download is canceled. A queued job may still fail later.</p>
+<label class="toggle"><input id="videoButtons" type="checkbox"> Show “Download with Fetch” on direct HTML5 video/audio</label>
+<p class="note">Opt-in. Works only when the page exposes an HTTP(S) media source; no blob/DRM capture, cookie forwarding, or network snooping.</p>
 </main><script src="popup.js"></script></body></html>
