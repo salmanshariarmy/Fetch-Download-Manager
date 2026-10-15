@@ -33,12 +33,31 @@ jobs:
         shell: pwsh
         run: dotnet run --project tests/Fetch.Tests/Fetch.Tests.csproj --configuration Release
 
+      - name: Validate browser extension
+        shell: pwsh
+        run: |
+          node --check browser-extension/background.js
+          node --check browser-extension/popup.js
+          node tests/browser-extension/bridge-smoke.cjs
+
       - name: Publish for Windows x64 (self-contained)
         shell: pwsh
         run: |
           dotnet publish src/Fetch.Desktop/Fetch.Desktop.csproj `
             --configuration Release --runtime win-x64 --self-contained true `
             --output artifacts/publish `
+            -p:PublishSingleFile=false -p:DebugType=none -p:DebugSymbols=false
+
+      - name: Build native messaging host
+        shell: pwsh
+        run: dotnet build src/Fetch.NativeHost/Fetch.NativeHost.csproj --configuration Release
+
+      - name: Publish native messaging host
+        shell: pwsh
+        run: |
+          dotnet publish src/Fetch.NativeHost/Fetch.NativeHost.csproj `
+            --configuration Release --runtime win-x64 --self-contained true `
+            --output artifacts/native `
             -p:PublishSingleFile=false -p:DebugType=none -p:DebugSymbols=false
 
       - name: Install Inno Setup 6
@@ -61,7 +80,12 @@ jobs:
       - name: Make portable ZIP
         shell: pwsh
         run: |
-          Compress-Archive -Path artifacts/publish/* `
+          New-Item -ItemType Directory -Path artifacts/portable -Force | Out-Null
+          Copy-Item -Path artifacts/publish/* -Destination artifacts/portable -Recurse -Force
+          Copy-Item -Path artifacts/native -Destination artifacts/portable/native -Recurse -Force
+          Copy-Item -Path browser-extension -Destination artifacts/portable/browser-extension -Recurse -Force
+          Copy-Item -Path scripts -Destination artifacts/portable/scripts -Recurse -Force
+          Compress-Archive -Path artifacts/portable/* `
             -DestinationPath artifacts/FetchPortable-win-x64.zip -Force
 
       - name: Upload setup.exe and portable ZIP

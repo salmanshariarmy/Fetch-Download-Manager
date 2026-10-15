@@ -19,7 +19,7 @@ implemented **.NET 8 WPF functional MVP**, NOT a full implementation of that spe
 | GitHub Actions builds x64 setup EXE and portable ZIP | Workflow included; needs execution on Windows runner |
 | Local HTTP integration tests | Included; not executed in this Linux authoring environment |
 | C++20 engine, CLI, named pipe, SQLite, WiX MSI | Not included |
-| Browser extensions, native messaging | Not included |
+| Chrome/Edge companion, native messaging | Partial v0.3: manual direct links, optional experimental download capture |
 | HLS/DASH/yt-dlp/ffmpeg, site grabber, FTP/FTPS | Not included |
 | Category filters and automatic extension classification | Implemented (0.2 source) |
 | Scheduler, authentication, proxies, throttle | Not included |
@@ -44,3 +44,16 @@ system's installed security protections. A direct HTTP URL is not encrypted.
   precisely the same time with the same generated filename; a collision fails safely
   instead of overwriting the first file.
 - A portable ZIP is separate from the setup installer.
+
+## v0.3 browser companion
+
+- Fixed dark selected DataGrid row/cell colors (no white-on-white selection).
+- Added Manifest V3 Chrome/Edge unpacked browser extension, popup and right-click
+  **Download with Fetch** on direct HTTP(S) links.
+- Added per-user Windows native messaging host and named pipe to queue URLs in
+  the desktop application. No local network listener or cookie access.
+- Added optional *experimental* automatic browser download capture, default off.
+- Registration is manual using `scripts/Register-FetchBrowser.ps1` and the
+  actual Chrome/Edge unpacked extension ID.
+- Still missing authenticated browser session downloading, site grabber,
+  streaming video integration and complete IDM feature parity.

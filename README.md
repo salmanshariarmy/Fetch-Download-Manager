@@ -1,11 +1,11 @@
-# Fetch — Windows Download Manager (0.2.0 Desktop Upgrade)
+# Fetch — Windows Download Manager (0.3.0 Browser Companion Upgrade)
 
 A source-code download manager for **Windows 10/11 x64**. Paste a direct HTTP(S) file URL, start a segmented download, pause/resume it, and browse download history with an organized desktop interface. Ranged downloads use up to eight connections.
 
-> **Scope:** This is an implemented desktop upgrade, **not** the complete
+> **Scope:** This is an incremental desktop and Chrome/Edge integration upgrade, **not** the complete
 > IDM-scale application in `docs/Original-full-specification.txt`. In particular,
-> the C++/SQLite engine, browser integration, media pipeline, site grabber,
-> signed MSI, and explicit malware scanning are **not** implemented. See
+> the C++/SQLite engine, full authenticated browser capture, video/media pipeline,
+> site grabber, signed MSI, and explicit malware scanning are **not** implemented. See
 > [docs/FEATURES.md](docs/FEATURES.md).
 
 ## Get a Windows installer using GitHub Actions
@@ -112,3 +112,50 @@ controls, and the original C++/SQLite backend. This is not feature parity with I
 **Important:** Installer is unsigned, and the new source has not yet been
 compiled on Windows in this authoring environment. GitHub Actions must pass
 before trying the installer. Tests and build passing are not a full QA audit.
+
+
+## v0.3: Fix unreadable selected row + Chrome/Edge extension
+
+The WPF DataGrid now explicitly sets **dark teal selected-cell backgrounds and
+white selected text**, including the inactive selection brushes. This fixes the
+white-on-white highlighted download row visible in the 0.2 screenshot.
+
+The browser companion supports **manual forwarding of direct HTTP(S) links**:
+right-click a link and select **Download with Fetch**, or paste a direct link in
+the extension popup. It uses **Chromium Manifest V3 + nativeMessaging**, then a
+**current-user-only Windows named pipe** to the desktop application; no local
+HTTP server is exposed. It forwards URLs only—never browsing history or cookies.
+
+**Installation after the 0.3 Windows installer is built and installed:**
+
+1. In Chrome, open `chrome://extensions` (Edge: `edge://extensions`).
+2. Enable **Developer mode**, click **Load unpacked**, and select:
+   `%LOCALAPPDATA%\Programs\Fetch\browser-extension`.
+3. Copy the 32-character extension **ID** shown in the browser.
+4. Open PowerShell and register the installed native host for that ID:
+
+   ```powershell
+   & "$env:LOCALAPPDATA\Programs\Fetch\scripts\Register-FetchBrowser.ps1" -ChromeId "PASTE_YOUR_CHROME_EXTENSION_ID"
+   ```
+
+   For Edge, use `-EdgeId "PASTE_EDGE_EXTENSION_ID"`. Both arguments can be
+   supplied in the same command if you use both browsers.
+5. Reload the extension. Right-click a **direct** `.zip`, `.exe`, `.pdf`, etc.
+   link, select **Download with Fetch**, and confirm the job appears in Fetch.
+
+**Automatic browser download capture** is included as an *experimental opt-in*
+checkbox in the extension popup, **off by default**. When enabled, it attempts
+to forward new HTTP(S) browser downloads to Fetch, canceling the browser copy
+only after Fetch acknowledges it. Keep it off until manual forwarding works;
+this feature has not been validated across sites and can be affected by
+short-lived URLs, cookies, headers, and expiring download links.
+
+**Not supported**: YouTube watch-page video extraction, DASH/HLS streaming,
+protected streams, cookies from authenticated sessions, DRM, native Firefox
+integration, reliable automatic capture of all browser download types, or
+web-store publishing. Direct URL support alone cannot download videos from
+ordinary streaming-site pages. The installer is **unsigned**.
+
+The authoring environment is not Windows and cannot run the WPF/native-messaging
+integration. GitHub Actions must compile 0.3, and the extension must be tested
+manually on Windows before treating this release as reliable.

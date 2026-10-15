@@ -1,5 +1,5 @@
 #define AppName "Fetch"
-#define AppVersion "0.2.0"
+#define AppVersion "0.3.0"
 #define AppPublisher "Fetch contributors"
 #define AppExe "Fetch.Desktop.exe"
 
@@ -32,6 +32,9 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Files]
 Source: "..\artifacts\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\artifacts\native\*"; DestDir: "{app}\native"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\browser-extension\*"; DestDir: "{app}\browser-extension"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\scripts\Register-FetchBrowser.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\Fetch"; Filename: "{app}\{#AppExe}"

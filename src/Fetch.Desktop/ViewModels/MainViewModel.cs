@@ -151,16 +151,25 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         JobsView.Refresh();
     }
 
-    private void Add()
+    private void Add() => TryAddUrl(UrlInput, true, out _);
+
+    // Executed on the WPF dispatcher by BrowserPipeServer.
+    // Returns success only when the job has been queued in Fetch.
+    public bool QueueBrowserUrl(string url, out string error) => TryAddUrl(url, false, out error);
+
+    private bool TryAddUrl(string input, bool clearInput, out string error)
     {
+        error = "";
         try
         {
-            string url = UrlInput.Trim();
-            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
-                (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            string url = input.Trim();
+            if (url.Length > 4096 || !Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+                (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
+                string.IsNullOrWhiteSpace(uri.Host) || !string.IsNullOrEmpty(uri.UserInfo))
             {
-                ShowMessage("Enter a direct http:// or https:// URL.");
-                return;
+                error = "Enter a direct HTTP(S) URL without embedded credentials (maximum 4096 characters).";
+                ShowMessage(error);
+                return false;
             }
             string fileName = FileNameSafety.FromUrl(url);
             string chosen = FileNameSafety.FreePath(DownloadFolder, fileName, path =>
@@ -177,14 +186,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             var vm = new DownloadJobViewModel(item);
             Jobs.Add(vm);
             SelectedJob = vm;
-            UrlInput = "";
+            if (clearInput) UrlInput = "";
             ShowMessage("Added: " + vm.Name);
             Persist();
             Start(vm);
+            return true;
         }
         catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
         {
-            ShowMessage("Cannot add download: " + ex.Message);
+            error = "Cannot add download: " + ex.Message;
+            ShowMessage(error);
+            return false;
         }
     }
 
@@ -363,9 +375,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     }
 
     private static void About() => System.Windows.MessageBox.Show(
-        "Fetch Download Manager 0.2 — Community Edition\n\n" +
+        "Fetch Download Manager 0.3 — Community Edition\n\n" +
         "Direct HTTP(S) downloads, multi-part transfer, resume, categories and queue controls.\n\n" +
-        "Browser capture, site grabber, streaming-media extraction and advanced scheduler are not included.\n" +
+        "Chrome/Edge extension: manual link forwarding and opt-in download capture.\n" +
+        "Streaming-media extraction, site grabber and advanced scheduler are not included.\n" +
         "Fetch is independently developed and is not affiliated with Internet Download Manager.",
         "About Fetch", MessageBoxButton.OK, MessageBoxImage.Information);
 
