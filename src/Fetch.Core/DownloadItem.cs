@@ -14,6 +14,8 @@ public sealed class DownloadItem
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Url { get; set; } = "";
+    // Only a same-origin scheme/host/port, never a complete private page URL.
+    public string? ReferrerOrigin { get; set; }
     public string FileName { get; set; } = "download.bin";
     public string SaveDirectory { get; set; } = "";
     public string Status { get; set; } = JobStatus.Queued;

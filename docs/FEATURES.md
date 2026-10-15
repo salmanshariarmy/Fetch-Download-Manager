@@ -1,4 +1,4 @@
-# Fetch v0.6 feature status
+# Fetch v0.7 feature status
 
 This source is a functional incremental **C#/.NET 8 WPF** download manager, **not** a full IDM replacement. The original requirements file is an ambitious target, not a list of already delivered features.
 
@@ -15,11 +15,14 @@ This source is a functional incremental **C#/.NET 8 WPF** download manager, **no
 | Local-time scheduled start | New v0.5; checks every 15s while app is open |
 | Expected direct-file SHA-256 verification | New v0.5; fails before final rename |
 | Chrome/Edge extension, right-click direct file links | Partial v0.3; manual native host registration |
-| Automatic browser download interception | Experimental opt-in only; not all sites |
+| Automatic browser download interception | Safe opt-in mirroring, never cancels browser file; not full IDM capture |
 | Media download using external yt-dlp and FFmpeg | Partial v0.4, separate user-installed tools |
 | Firefox integration | Not implemented |
 | HTML5 direct-media hover button | Opt-in v0.6; supports exposed HTTP(S) video/audio src only, no blob/DRM |
-| Deep network sniffing / video format preview | Not implemented |
+| Browser popup: find exposed HLS/DASH URLs | New v0.7; user-initiated DOM and resource name inspection; not arbitrary network sniffing |
+| Browser popup: download current media page | New v0.7; sends page explicitly to yt-dlp, which must be installed |
+| Browser same-origin referrer for hotlink support | New v0.7; preserves origin only, excludes paths/queries/cookies; not authenticated sessions |
+| Deep network sniffing / video format preview | Limited to visible HTML5 sources, manifest URLs, and external yt-dlp; no DRM |
 | Browser authentication/cookie session forwarding | Not implemented |
 | Dedicated C++20 engine, SQLite, IPC CLI, WiX MSI | Not implemented; currently C# WPF and JSON |
 | FTP/FTPS, manual proxies, credential managers | Not implemented |
@@ -32,7 +35,7 @@ This source is a functional incremental **C#/.NET 8 WPF** download manager, **no
 
 ## Security and stability
 
-- No telemetry or browser cookie exfiltration is intentionally implemented. Browser native messaging accepts only URL forwarding, and the extension is opt-in.
+- No telemetry or browser cookie exfiltration is intentionally implemented. Browser native messaging accepts explicit URL/media forwarding and same-origin referrer origin only, and the extension is opt-in.
 - Windows system TLS trust is used for HTTPS. Unsafe server filenames are sanitized. Existing destination files are not silently replaced.
 - Optional user-supplied SHA-256 is verified before the rename, and failed parts remain on disk. It does not substitute for malware scanning.
 - The browser extension, media integration, and new Windows desktop changes still require end-to-end QA on actual Windows installations.

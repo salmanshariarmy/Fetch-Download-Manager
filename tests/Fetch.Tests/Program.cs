@@ -22,6 +22,8 @@ sealed class LocalRangeServer : IAsyncDisposable
     public string ETag { get; set; } = "\"v1\"";
     public int RejectFirstGets { get; set; }
     public HttpStatusCode? RejectAllGetsWith { get; set; }
+    public string? RequiredReferer { get; set; }
+    public string? LastReferer { get; private set; }
     private int _getCount;
     public int GetCount => Volatile.Read(ref _getCount);
 
@@ -58,12 +60,23 @@ sealed class LocalRangeServer : IAsyncDisposable
                 string method = line.Split(' ').FirstOrDefault() ?? "";
                 string? range = null;
                 string? ifRange = null;
+                string? referrer = null;
                 while (!string.IsNullOrEmpty(line = await reader.ReadLineAsync()))
                 {
                     if (line.StartsWith("Range:", StringComparison.OrdinalIgnoreCase))
                         range = line[6..].Trim();
                     if (line.StartsWith("If-Range:", StringComparison.OrdinalIgnoreCase))
                         ifRange = line[9..].Trim();
+                    if (line.StartsWith("Referer:", StringComparison.OrdinalIgnoreCase))
+                        referrer = line[8..].Trim();
+                }
+                LastReferer = referrer;
+                if (RequiredReferer is not null && referrer != RequiredReferer)
+                {
+                    byte[] forbidden = Encoding.ASCII.GetBytes(
+                        "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                    await stream.WriteAsync(forbidden);
+                    return;
                 }
                 if (method.Equals("GET", StringComparison.OrdinalIgnoreCase))
                 {
@@ -156,6 +169,21 @@ static class Program
             Assert.That(HttpRetryPolicy.Delay(2, null) == TimeSpan.FromSeconds(4), "backoff bound");
             var after = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(120));
             Assert.That(HttpRetryPolicy.Delay(0, after) == TimeSpan.FromSeconds(30), "Retry-After capped");
+        });
+        Unit("Browser referrer strips secrets and rejects cross-origin", () =>
+        {
+            Assert.That(BrowserLinkPolicy.SafeReferrerOrigin(
+                "https://example.org/file.zip", "https://example.org/private?token=supersecret") ==
+                "https://example.org/", "origin-only reference");
+            Assert.That(BrowserLinkPolicy.SafeReferrerOrigin(
+                "https://cdn.example.org/file", "https://example.org/secret") == null,
+                "cross-origin reference rejected");
+            Assert.That(BrowserLinkPolicy.SafeReferrerOrigin(
+                "https://example.org/file", "https://user:password@example.org/private") == null,
+                "browser credentials rejected");
+            Assert.That(BrowserLinkPolicy.SafeReferrerOrigin(
+                "https://example.org/file", "file:///etc/passwd") == null,
+                "non-web referrer rejected");
         });
         Unit("Media progress parsing", () =>
         {
@@ -292,6 +320,25 @@ static class Program
                 Assert.That(rejected, "non-retryable HTTP failure reported clearly");
                 Assert.That(missingServer.GetCount == 1, "404 is not retried");
                 Console.WriteLine("PASS  HTTP 404 fails without pointless retries"); _passed++;
+            }
+
+            // Browser referrer forwarding sends only origin for same-origin hotlink checks.
+            await using (var referrerServer = new LocalRangeServer(payload))
+            {
+                string safe = BrowserLinkPolicy.SafeReferrerOrigin(
+                    referrerServer.Url, referrerServer.Url.Replace("/test.bin", "/private?token=secret"))!;
+                referrerServer.RequiredReferer = safe;
+                var withReferrer = new DownloadItem {
+                    Url = referrerServer.Url, ReferrerOrigin = safe,
+                    FileName = "hotlink.bin", SaveDirectory = job.SaveDirectory,
+                    RequestedConnections = 2
+                };
+                var hotlinkResult = await downloader.DownloadAsync(withReferrer, null, null,
+                    CancellationToken.None);
+                Assert.That(File.ReadAllBytes(hotlinkResult.SavedPath).SequenceEqual(payload),
+                    "same-origin referrer permits transfer");
+                Assert.That(referrerServer.LastReferer == safe, "only origin is transmitted");
+                Console.WriteLine("PASS  same-origin referrer for hotlink-guarded local HTTP download"); _passed++;
             }
 
             // Validator change must discard incompatible old partial bytes.

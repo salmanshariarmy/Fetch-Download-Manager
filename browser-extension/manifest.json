@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Fetch Download Manager Companion",
-  "version": "0.6.0",
-  "description": "Send direct file and HTML5 media links to your local Fetch desktop downloader.",
+  "version": "0.7.0",
+  "description": "Send links and exposed media playlists to your local Fetch downloader.",
   "permissions": [
     "nativeMessaging",
     "contextMenus",

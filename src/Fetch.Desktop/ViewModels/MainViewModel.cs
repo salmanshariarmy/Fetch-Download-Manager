@@ -198,9 +198,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     // Executed on the WPF dispatcher by BrowserPipeServer.
     // Returns success only when the job has been queued in Fetch.
-    public bool QueueBrowserUrl(string url, out string error) => TryAddUrl(url, false, out error);
+    public bool QueueBrowserUrl(string url, string? sourcePage, bool media, out string error) =>
+        TryAddUrl(url, false, out error, forceMedia: media, sourcePage: sourcePage);
 
-    private bool TryAddUrl(string input, bool clearInput, out string error, bool forceMedia = false)
+    public bool QueueBrowserUrl(string url, out string error) =>
+        QueueBrowserUrl(url, null, false, out error);
+
+    private bool TryAddUrl(string input, bool clearInput, out string error, bool forceMedia = false, string? sourcePage = null)
     {
         error = "";
         try
@@ -215,7 +219,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 return false;
             }
             bool isMedia = forceMedia || MediaDownloader.IsKnownMediaUrl(url);
-            string checksum = ExpectedSha256Text.Trim();
+            // Browser-initiated jobs must never inherit options intended for a manually entered URL.
+            string checksum = clearInput ? ExpectedSha256Text.Trim() : "";
             if (!HashVerifier.IsValidSha256(checksum))
             {
                 error = "SHA-256 must contain 64 hexadecimal characters, or be empty.";
@@ -236,6 +241,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             var item = new DownloadItem
             {
                 Url = url,
+                ReferrerOrigin = BrowserLinkPolicy.SafeReferrerOrigin(url, sourcePage),
                 FileName = Path.GetFileName(chosen),
                 SaveDirectory = DownloadFolder,
                 Status = JobStatus.Queued,
@@ -515,9 +521,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     }
 
     private static void About() => System.Windows.MessageBox.Show(
-        "Fetch Download Manager 0.6 — Community Edition\n\n" +
+        "Fetch Download Manager 0.7 — Community Edition\n\n" +
         "Direct HTTP(S) downloads, multi-part transfer, resume, categories and queue controls.\n\n" +
-        "Chrome/Edge extension: manual link forwarding, opt-in capture and direct video buttons.\n" +
+        "Chrome/Edge extension: manual links, current-page yt-dlp, exposed HLS/DASH discovery and safe mirroring.\n" +
         "Media downloads require user-installed yt-dlp and optional FFmpeg.\n" +
         "Scheduled starts, configurable connections, speed limit and optional SHA-256 are available.\n" +
         "A full site grabber, FTP and complete browser interception are not included.\n" +

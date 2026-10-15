@@ -45,7 +45,7 @@ const media = {
   getBoundingClientRect(){return {top:200,left:100,right:660,bottom:570,width:560,height:370};}
 };
 const companion = {
-  runtime:{lastError:null, sendMessage(message,callback){
+  runtime:{lastError:null, onMessage:{addListener(fn){events["fetch:listMedia"] = fn;}}, sendMessage(message,callback){
     sendCount++; lastUrl=message.url; callback({ok:true,message:"Accepted"});
   }},
   storage:{local:{get(_opts, callback){callback({videoButtons:true});}},
@@ -63,3 +63,30 @@ assert.equal(button.textContent,"Queued in Fetch ✓");
 events.settings({videoButtons:{newValue:false}},"local");
 assert.equal(button.style.display,"none");
 console.log("PASS: opt-in hover media button forwards direct video and can be disabled");
+
+const discover = context.testingUtils.discoverMedia;
+const documentWithStreams = {
+  querySelectorAll(selector) {
+    if (selector === "video, audio") return [node("https://example.org/clip.mp4")];
+    if (selector === "a[href], link[href]") return [
+      {href:"https://media.example.org/master.m3u8?quality=high"},
+      {href:"https://example.org/not-media.zip"}
+    ];
+    return [];
+  }
+};
+const resourceEntries = {
+  getEntriesByType(kind) {
+    assert.equal(kind,"resource");
+    return [{name:"https://media.example.org/main.mpd?session=1"},
+      {name:"blob:https://example.org/secret"},
+      {name:"https://example.org/tracker.js"}];
+  }
+};
+const discovered = discover(documentWithStreams, resourceEntries, "https://example.org/page");
+assert.equal(discovered.length,3);
+assert.ok(discovered.some(x=>x.url.endsWith("clip.mp4") && !x.media));
+assert.ok(discovered.some(x=>x.url.includes("master.m3u8") && x.media));
+assert.ok(discovered.some(x=>x.url.includes("main.mpd") && x.media));
+assert.ok(!discovered.some(x=>x.url.startsWith("blob:")));
+console.log("PASS: user-invoked HLS/DASH resource-timing discovery, direct HTML5 sources and filtering");

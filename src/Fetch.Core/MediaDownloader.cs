@@ -119,6 +119,8 @@ public sealed class MediaDownloader
                 _ => "b"
             };
         }
+        if (BrowserLinkPolicy.SafeReferrerOrigin(item.Url, item.ReferrerOrigin) is { } origin)
+            Add("--referer", origin);
         Add(item.Url);
 
         using var process = new Process { StartInfo = processInfo };

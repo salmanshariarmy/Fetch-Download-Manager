@@ -5,8 +5,12 @@
 <label for="url">Direct download URL</label><input id="url" type="url" spellcheck="false" placeholder="https://example.com/file.zip" />
 <button id="send">Download with Fetch</button>
 <p id="status" role="status" aria-live="polite">Use the right-click menu on a file link, or paste its URL here.</p>
-<hr><label class="toggle"><input id="capture" type="checkbox"> Capture browser downloads automatically</label>
-<p class="note">Experimental: Fetch must confirm the job before the browser download is canceled. A queued job may still fail later.</p>
+<hr><button id="pageMedia" type="button">Download current page media (yt-dlp)</button>
+<button id="findStreams" type="button">Find exposed video/playlist URLs</button>
+<div id="mediaList" aria-live="polite"></div>
+<p class="note">Looks only at direct HTML5 sources and visible HLS/DASH manifests. yt-dlp is optional and required for page downloads. No DRM or blob sources.</p>
+<hr><label class="toggle"><input id="capture" type="checkbox"> Mirror browser downloads to Fetch (keep browser copy)</label>
+<p class="note">Experimental; creates two downloads. Fetch will <strong>not cancel</strong> the browser copy, even when queued successfully.</p>
 <label class="toggle"><input id="videoButtons" type="checkbox"> Show “Download with Fetch” on direct HTML5 video/audio</label>
 <p class="note">Opt-in. Works only when the page exposes an HTTP(S) media source; no blob/DRM capture, cookie forwarding, or network snooping.</p>
 </main><script src="popup.js"></script></body></html>

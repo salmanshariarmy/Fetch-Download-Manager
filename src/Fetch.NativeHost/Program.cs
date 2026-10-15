@@ -31,6 +31,15 @@ try
         return;
     }
     var url = field.GetString() ?? "";
+    bool media = root.TryGetProperty("media", out var mediaField) &&
+        mediaField.ValueKind == JsonValueKind.True;
+    string? sourcePage = root.TryGetProperty("sourcePage", out var sourceField) &&
+        sourceField.ValueKind == JsonValueKind.String ? sourceField.GetString() : null;
+    if (sourcePage is { Length: > 2048 })
+    {
+        await ReplyAsync(false, "Source page address is too long.");
+        return;
+    }
     if (url.Length < 8 || url.Length > 4096 ||
         !Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
         uri.Scheme is not ("http" or "https") ||
@@ -39,6 +48,15 @@ try
         await ReplyAsync(false, "Only direct HTTP(S) URLs without credentials are supported.");
         return;
     }
+    // Accept a same-origin referrer only, and discard page paths, tokens, and
+    // fragments before writing to any pipe or child-process arguments.
+    if (sourcePage is not null &&
+        Uri.TryCreate(sourcePage, UriKind.Absolute, out var pageUri) &&
+        string.Equals(pageUri.Scheme, uri.Scheme, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(pageUri.IdnHost, uri.IdnHost, StringComparison.OrdinalIgnoreCase) &&
+        pageUri.Port == uri.Port && pageUri.UserInfo.Length == 0)
+        sourcePage = pageUri.GetLeftPart(UriPartial.Authority) + "/";
+    else sourcePage = null;
     try
     {
         using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut,
@@ -50,7 +68,7 @@ try
         {
             AutoFlush = true
         };
-        await writer.WriteLineAsync(JsonSerializer.Serialize(new { command = "add", url }));
+        await writer.WriteLineAsync(JsonSerializer.Serialize(new { command = "add", url, media, sourcePage }));
         using var readTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
         var line = await reader.ReadLineAsync(readTimeout.Token);
         if (line is null) throw new IOException("Fetch did not reply.");
@@ -75,8 +93,13 @@ try
         try
         {
             var start = new ProcessStartInfo(exe) { UseShellExecute = false };
-            start.ArgumentList.Add("--fetch-add-url");
+            start.ArgumentList.Add(media ? "--fetch-media-url" : "--fetch-add-url");
             start.ArgumentList.Add(url);
+            if (!string.IsNullOrEmpty(sourcePage))
+            {
+                start.ArgumentList.Add("--fetch-source-page");
+                start.ArgumentList.Add(sourcePage);
+            }
             using var process = Process.Start(start);
             // Launching the UI is not proof of a queued download. Return ok=false
             // so optional automatic interception does NOT cancel Chrome's copy.

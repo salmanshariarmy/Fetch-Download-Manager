@@ -44,7 +44,8 @@
       }
       button.disabled = true;
       button.textContent = "Sending to Fetch…";
-      chrome.runtime.sendMessage({type:"download",url}, (reply) => {
+      chrome.runtime.sendMessage({type:"download",url,sourcePage:window.location?.href || document.baseURI,
+        media:/\.(m3u8|mpd)(?:$|[?#])/i.test(url)}, (reply) => {
         const error = chrome.runtime.lastError?.message;
         button.textContent = error ? "Fetch not connected" :
           reply?.ok ? "Queued in Fetch ✓" : "Not queued — open Fetch";
@@ -75,6 +76,13 @@
   }, true);
   window.addEventListener("scroll", position, true);
   window.addEventListener("resize", position);
+  // This is a user-requested scan, not continuous page tracking.
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type !== "fetch:listMedia") return false;
+    sendResponse({items:FetchMediaUtils.discoverMedia(document, window.performance,
+      window.location?.href || document.baseURI)});
+    return false;
+  });
   chrome.storage.local.get({videoButtons:false}, (settings) => {
     enabled = !!settings.videoButtons;
   });

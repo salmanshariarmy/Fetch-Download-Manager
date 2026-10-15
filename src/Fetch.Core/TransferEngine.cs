@@ -95,7 +95,7 @@ public sealed class TransferEngine : IDisposable
         Directory.CreateDirectory(item.SaveDirectory);
         string partDir = Path.Combine(_store.PartsFolder, item.Id.ToString("N"));
         Directory.CreateDirectory(partDir);
-        var remote = await ProbeAsync(url, cancellation).ConfigureAwait(false);
+        var remote = await ProbeAsync(url, item.ReferrerOrigin, cancellation).ConfigureAwait(false);
         bool noExistingParts = !Directory.EnumerateFiles(partDir, "seg-*.part").Any();
         if (item.SegmentCount == 0 && noExistingParts &&
             !string.IsNullOrWhiteSpace(remote.SuggestedFileName))
@@ -154,9 +154,10 @@ public sealed class TransferEngine : IDisposable
         }
     }
 
-    private async Task<RemoteInfo> ProbeAsync(Uri url, CancellationToken ct)
+    private async Task<RemoteInfo> ProbeAsync(Uri url, string? referrerOrigin, CancellationToken ct)
     {
         using var head = new HttpRequestMessage(HttpMethod.Head, url);
+        ApplySafeReferrer(head, referrerOrigin);
         head.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
         using var response = await _http.SendAsync(head, HttpCompletionOption.ResponseHeadersRead, ct)
             .ConfigureAwait(false);
@@ -165,6 +166,7 @@ public sealed class TransferEngine : IDisposable
 
         // HEAD is blocked by some file hosts; fall back to a zero-byte range probe.
         using var get = new HttpRequestMessage(HttpMethod.Get, url);
+        ApplySafeReferrer(get, referrerOrigin);
         get.Headers.Range = new RangeHeaderValue(0, 0);
         get.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
         using var fallback = await _http.SendAsync(get, HttpCompletionOption.ResponseHeadersRead, ct)
@@ -216,7 +218,7 @@ public sealed class TransferEngine : IDisposable
         for (int i = 0; i < count; i++)
         {
             int index = i;
-            tasks.Add(DownloadPartWithRetryAsync(item.Url, remote, partDir, index,
+            tasks.Add(DownloadPartWithRetryAsync(item.Url, item.ReferrerOrigin, remote, partDir, index,
                 ranges == null ? null : ranges[index], tracker, siblings.Token));
         }
         try { await Task.WhenAll(tasks).ConfigureAwait(false); }
@@ -265,7 +267,7 @@ public sealed class TransferEngine : IDisposable
     }
 
     private async Task DownloadPartWithRetryAsync(
-        string rawUrl, RemoteInfo remote, string partDir, int index,
+        string rawUrl, string? referrerOrigin, RemoteInfo remote, string partDir, int index,
         ByteRange? range, ProgressCounter tracker, CancellationToken ct)
     {
         string path = PartPath(partDir, index);
@@ -284,6 +286,7 @@ public sealed class TransferEngine : IDisposable
                 if (!remote.Ranges && have > 0)
                     throw new IOException("The server does not permit safe resume.");
                 using var request = new HttpRequestMessage(HttpMethod.Get, rawUrl);
+                ApplySafeReferrer(request, referrerOrigin);
                 request.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
                 if (seek && range.HasValue)
                 {
@@ -358,6 +361,13 @@ public sealed class TransferEngine : IDisposable
                 await Task.Delay(TimeSpan.FromSeconds(1 << attempt), ct).ConfigureAwait(false);
             }
         }
+    }
+
+    private static void ApplySafeReferrer(HttpRequestMessage request, string? sourcePage)
+    {
+        string? safeOrigin = BrowserLinkPolicy.SafeReferrerOrigin(
+            request.RequestUri!.AbsoluteUri, sourcePage);
+        if (safeOrigin is not null) request.Headers.Referrer = new Uri(safeOrigin);
     }
 
     private static string PartPath(string directory, int index) =>

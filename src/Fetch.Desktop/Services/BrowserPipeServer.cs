@@ -6,7 +6,7 @@ using System.Windows.Threading;
 
 namespace Fetch.Desktop.Services;
 
-public delegate bool QueueUrlHandler(string url, out string error);
+public delegate bool QueueUrlHandler(string url, string? sourcePage, bool media, out string error);
 
 /// <summary>Current-user-only named-pipe bridge for the browser native host.
 /// No open HTTP port, no cookies, and no privileged service.</summary>
@@ -58,12 +58,16 @@ public sealed class BrowserPipeServer : IDisposable
                             urlProperty.ValueKind == JsonValueKind.String)
                         {
                             var url = urlProperty.GetString() ?? "";
-                            if (url.Length <= 4096)
+                            string? sourcePage = data.TryGetProperty("sourcePage", out var source) &&
+                                source.ValueKind == JsonValueKind.String ? source.GetString() : null;
+                            bool media = data.TryGetProperty("media", out var mediaField) &&
+                                mediaField.ValueKind == JsonValueKind.True;
+                            if (url.Length <= 4096 && (sourcePage?.Length ?? 0) <= 2048)
                             {
                                 // ViewModel and ObservableCollection are always accessed on the UI thread.
                                 (ok, error) = await _dispatcher.InvokeAsync(() =>
                                 {
-                                    var queued = _enqueue(url, out var reason);
+                                    var queued = _enqueue(url, sourcePage, media, out var reason);
                                     return (queued, reason);
                                 });
                             }

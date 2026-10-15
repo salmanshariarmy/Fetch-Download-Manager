@@ -28,14 +28,19 @@ public partial class MainWindow : Window
         // Invoked only from our own native host when Fetch was not running.
         // Direct manual use of --fetch-add-url still validates URL in the view model.
         var args = Environment.GetCommandLineArgs();
+        string? requestedUrl = null, sourcePage = null;
+        bool media = false;
         for (int i = 1; i + 1 < args.Length; i++)
         {
-            if (args[i] == "--fetch-add-url")
+            if (args[i] is "--fetch-add-url" or "--fetch-media-url")
             {
-                _vm.QueueBrowserUrl(args[++i], out _);
-                break;
+                media = args[i] == "--fetch-media-url";
+                requestedUrl = args[++i];
             }
+            else if (args[i] == "--fetch-source-page") sourcePage = args[++i];
         }
+        if (requestedUrl is not null)
+            _vm.QueueBrowserUrl(requestedUrl, sourcePage, media, out _);
         _browserBridge.Start();
     }
 }
