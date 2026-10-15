@@ -94,7 +94,7 @@
                             <DataTemplate>
                                 <StackPanel Margin="2,3">
                                     <TextBlock Text="{Binding ProgressText}" FontSize="11" Margin="0,0,0,5" />
-                                    <ProgressBar Minimum="0" Maximum="100" Value="{Binding ProgressPercent}"
+                                    <ProgressBar Minimum="0" Maximum="100" Value="{Binding ProgressPercent, Mode=OneWay}"
                                                  Height="7" Background="#3B4C64" Foreground="{StaticResource Accent}" />
                                 </StackPanel>
                             </DataTemplate>
