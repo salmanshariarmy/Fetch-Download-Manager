@@ -1,5 +1,5 @@
 #define AppName "Fetch"
-#define AppVersion "0.3.0"
+#define AppVersion "0.4.0"
 #define AppPublisher "Fetch contributors"
 #define AppExe "Fetch.Desktop.exe"
 
@@ -35,6 +35,7 @@ Source: "..\artifacts\publish\*"; DestDir: "{app}"; Flags: ignoreversion recurse
 Source: "..\artifacts\native\*"; DestDir: "{app}\native"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\browser-extension\*"; DestDir: "{app}\browser-extension"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\scripts\Register-FetchBrowser.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
+Source: "..\scripts\Install-MediaTools.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\Fetch"; Filename: "{app}\{#AppExe}"

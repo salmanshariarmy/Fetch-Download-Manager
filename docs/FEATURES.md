@@ -57,3 +57,13 @@ system's installed security protections. A direct HTTP URL is not encrypted.
   actual Chrome/Edge unpacked extension ID.
 - Still missing authenticated browser session downloading, site grabber,
   streaming video integration and complete IDM feature parity.
+
+## Fetch 0.4: opt-in media download
+
+- Choose **Download video** for an HLS/DASH playlist, a supported video page, or another URL supported by yt-dlp.
+- YouTube/Vimeo watch URLs and `.m3u8`/`.mpd` links entered using **Add URL** route through yt-dlp automatically.
+- Choose Best, 1080p, 720p, 480p, or Audio only. Availability depends on the remote site.
+- yt-dlp is **not bundled**: install it separately using scripts/Install-MediaTools.ps1 or official downloads. FFmpeg improves quality/muxing.
+- Browser extension right-click links can send video-page URLs via the existing bridge; video detection overlays are not yet supported.
+- No bypass of DRM, paywalls, access controls, or site restrictions. No downloaded cookies are forwarded.
+- Media resume is delegated to yt-dlp and may vary by provider. Not a full IDM-compatible media implementation.

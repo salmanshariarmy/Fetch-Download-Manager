@@ -121,6 +121,20 @@ static class Program
                 Assert.That(plan[i - 1].End + 1 == plan[i].Start, "contiguous ranges");
             Assert.That(plan.Sum(x => x.Length) == 1_000_001, "total length");
         });
+        Unit("Media URL detection and quality selection", () =>
+        {
+            Assert.That(MediaDownloader.IsKnownMediaUrl("https://www.youtube.com/watch?v=abc"), "youtube page");
+            Assert.That(MediaDownloader.IsKnownMediaUrl("https://cdn.example.org/vid.m3u8?sig=1"), "HLS");
+            Assert.That(!MediaDownloader.IsKnownMediaUrl("https://example.com/archive.zip"), "direct file");
+            Assert.That(!MediaDownloader.IsKnownMediaUrl("javascript:alert(1)"), "reject JS URL");
+            Assert.That(MediaDownloader.FormatForQuality("720p").Contains("height<=720"), "quality bound");
+        });
+        Unit("Media progress parsing", () =>
+        {
+            Assert.That(MediaDownloader.TryParseProgress("FETCH_PROGRESS:1024|2048|512.0", out var p), "parse progress");
+            Assert.That(p.DownloadedBytes == 1024 && p.TotalBytes == 2048 && p.BytesPerSecond == 512, "progress numbers");
+            Assert.That(!MediaDownloader.TryParseProgress("some unrelated output", out _), "skip other lines");
+        });
         Unit("Recommend connections", () =>
         {
             Assert.That(SegmentPlan.Recommend(8 * 1_048_576, true) == 8, "8 segments");

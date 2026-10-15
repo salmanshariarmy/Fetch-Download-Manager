@@ -16,6 +16,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly JobStore _store = new();
     private readonly TransferEngine _engine;
+    private readonly MediaDownloader _media = new();
+    private string _mediaQuality = "Best";
     private readonly SemaphoreSlim _slots = new(3, 3);
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _active = new();
     private string _urlInput = "";
@@ -41,6 +43,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         get => _urlInput;
         set { _urlInput = value; Changed(); }
+    }
+
+    public string[] MediaQualityChoices { get; } = new[] { "Best", "1080p", "720p", "480p", "Audio only" };
+    public string MediaQuality
+    {
+        get => _mediaQuality;
+        set { _mediaQuality = value; Changed(); }
     }
 
     public string DownloadFolder
@@ -84,6 +93,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                                  $"{Jobs.Count(j => j.Item.Status != JobStatus.Completed)} unfinished";
 
     public ICommand AddCommand { get; }
+    public ICommand AddMediaCommand { get; }
     public ICommand PauseCommand { get; }
     public ICommand ResumeCommand { get; }
     public ICommand RemoveCommand { get; }
@@ -105,6 +115,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         JobsView.Filter = MatchesFilter;
         Jobs.CollectionChanged += OnJobsChanged;
         AddCommand = new RelayCommand(Add);
+        AddMediaCommand = new RelayCommand(AddMedia);
         PauseCommand = new RelayCommand(Pause);
         ResumeCommand = new RelayCommand(() => Start(SelectedJob));
         RemoveCommand = new RelayCommand(Remove);
@@ -152,12 +163,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     }
 
     private void Add() => TryAddUrl(UrlInput, true, out _);
+    private void AddMedia() => TryAddUrl(UrlInput, true, out _, forceMedia: true);
 
     // Executed on the WPF dispatcher by BrowserPipeServer.
     // Returns success only when the job has been queued in Fetch.
     public bool QueueBrowserUrl(string url, out string error) => TryAddUrl(url, false, out error);
 
-    private bool TryAddUrl(string input, bool clearInput, out string error)
+    private bool TryAddUrl(string input, bool clearInput, out string error, bool forceMedia = false)
     {
         error = "";
         try
@@ -171,7 +183,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 ShowMessage(error);
                 return false;
             }
-            string fileName = FileNameSafety.FromUrl(url);
+            bool isMedia = forceMedia || MediaDownloader.IsKnownMediaUrl(url);
+            string fileName = isMedia ? "video.mp4" : FileNameSafety.FromUrl(url);
             string chosen = FileNameSafety.FreePath(DownloadFolder, fileName, path =>
                 File.Exists(path) || Jobs.Any(x =>
                     string.Equals(Path.Combine(x.Item.SaveDirectory, x.Item.FileName),
@@ -181,7 +194,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 Url = url,
                 FileName = Path.GetFileName(chosen),
                 SaveDirectory = DownloadFolder,
-                Status = JobStatus.Queued
+                Status = JobStatus.Queued,
+                IsMedia = isMedia,
+                MediaQuality = isMedia ? MediaQuality : "Best"
             };
             var vm = new DownloadJobViewModel(item);
             Jobs.Add(vm);
@@ -240,8 +255,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                     Persist();
                 });
             }
-            var result = await _engine.DownloadAsync(vm.Item, progress,
-                MetadataReady, cancellation.Token);
+            var result = vm.Item.IsMedia
+                ? await _media.DownloadAsync(vm.Item, progress, cancellation.Token)
+                : await _engine.DownloadAsync(vm.Item, progress, MetadataReady, cancellation.Token);
             if (!_disposing)
             {
                 vm.Item.FileName = Path.GetFileName(result.SavedPath);
@@ -375,10 +391,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     }
 
     private static void About() => System.Windows.MessageBox.Show(
-        "Fetch Download Manager 0.3 — Community Edition\n\n" +
+        "Fetch Download Manager 0.4 — Community Edition\n\n" +
         "Direct HTTP(S) downloads, multi-part transfer, resume, categories and queue controls.\n\n" +
         "Chrome/Edge extension: manual link forwarding and opt-in download capture.\n" +
-        "Streaming-media extraction, site grabber and advanced scheduler are not included.\n" +
+        "Media downloads require user-installed yt-dlp and optional FFmpeg.\n" +
+        "Site grabber, advanced scheduler and complete browser interception are not included.\n" +
         "Fetch is independently developed and is not affiliated with Internet Download Manager.",
         "About Fetch", MessageBoxButton.OK, MessageBoxImage.Information);
 

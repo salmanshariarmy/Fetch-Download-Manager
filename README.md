@@ -1,11 +1,12 @@
-# Fetch — Windows Download Manager (0.3.0 Browser Companion Upgrade)
+# Fetch — Windows Download Manager (0.4.0 Browser + Optional Media Upgrade)
 
 A source-code download manager for **Windows 10/11 x64**. Paste a direct HTTP(S) file URL, start a segmented download, pause/resume it, and browse download history with an organized desktop interface. Ranged downloads use up to eight connections.
 
 > **Scope:** This is an incremental desktop and Chrome/Edge integration upgrade, **not** the complete
 > IDM-scale application in `docs/Original-full-specification.txt`. In particular,
-> the C++/SQLite engine, full authenticated browser capture, video/media pipeline,
-> site grabber, signed MSI, and explicit malware scanning are **not** implemented. See
+> the C++/SQLite engine, full authenticated browser capture, full native video sniffing,
+> site grabber, signed MSI, and explicit malware scanning are **not** implemented.
+> A limited, optional yt-dlp-based media download path is available when the user installs external tools. See
 > [docs/FEATURES.md](docs/FEATURES.md).
 
 ## Get a Windows installer using GitHub Actions
@@ -159,3 +160,12 @@ ordinary streaming-site pages. The installer is **unsigned**.
 The authoring environment is not Windows and cannot run the WPF/native-messaging
 integration. GitHub Actions must compile 0.3, and the extension must be tested
 manually on Windows before treating this release as reliable.
+
+## Optional media downloader (0.4)
+
+Fetch supports video URLs through a **user-installed** `yt-dlp.exe` and optional `ffmpeg.exe`.
+Run `powershell -ExecutionPolicy Bypass -File scripts\Install-MediaTools.ps1` on Windows,
+or download both tools yourself from the official authors. Restart Fetch after installation.
+In Fetch, paste a URL, choose the desired quality, and click **Download video**.
+Some media pages require logins, impose download restrictions, or use DRM; Fetch does not bypass these.
+A successful build is not a guarantee that a provider URL will work.

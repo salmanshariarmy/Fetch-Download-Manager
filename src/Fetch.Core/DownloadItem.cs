@@ -21,6 +21,9 @@ public sealed class DownloadItem
     public int SegmentCount { get; set; }
     public string? ETag { get; set; }
     public string? LastModified { get; set; }
+    // Media jobs are handled by optional yt-dlp; legacy items default to direct HTTP.
+    public bool IsMedia { get; set; }
+    public string MediaQuality { get; set; } = "Best";
     public string? Error { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

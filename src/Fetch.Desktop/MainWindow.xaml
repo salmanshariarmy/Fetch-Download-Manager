@@ -39,6 +39,7 @@
             <MenuItem Header="Tasks">
                 <MenuItem Header="Add URL" Command="{Binding AddCommand}" InputGestureText="Ctrl+Enter" />
                 <MenuItem Header="Paste URL from clipboard" Command="{Binding PasteUrlCommand}" InputGestureText="Ctrl+L" />
+                <MenuItem Header="Download media URL via yt-dlp" Command="{Binding AddMediaCommand}" />
                 <Separator />
                 <MenuItem Header="Start / Resume selected" Command="{Binding ResumeCommand}" />
                 <MenuItem Header="Pause selected" Command="{Binding PauseCommand}" />
@@ -69,6 +70,8 @@
                 <WrapPanel>
                     <Button Style="{StaticResource ToolbarButton}" Content="＋  Add URL" Command="{Binding AddCommand}"
                             Background="{StaticResource Accent}" Foreground="#102635" />
+                    <Button Style="{StaticResource ToolbarButton}" Content="▶  Download video" Command="{Binding AddMediaCommand}"
+                            ToolTip="Download a permitted media page or stream via yt-dlp (separate installation required)" />
                     <Button Style="{StaticResource ToolbarButton}" Content="▶  Resume" Command="{Binding ResumeCommand}" />
                     <Button Style="{StaticResource ToolbarButton}" Content="Ⅱ  Pause" Command="{Binding PauseCommand}" />
                     <Button Style="{StaticResource ToolbarButton}" Content="⏸  Pause all" Command="{Binding PauseAllCommand}" />
@@ -87,12 +90,30 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="URL" Foreground="#A9BED0" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,13,0" />
                 <TextBox Grid.Column="1" Text="{Binding UrlInput, UpdateSourceTrigger=PropertyChanged}"
                          ToolTip="Direct HTTP or HTTPS file address" VerticalContentAlignment="Center" />
                 <Button Grid.Column="2" Content="Paste" Command="{Binding PasteUrlCommand}" Margin="9,0,0,0" />
-                <Button Grid.Column="3" Content="Download" Command="{Binding AddCommand}"
+                <ComboBox Grid.Column="3" ItemsSource="{Binding MediaQualityChoices}"
+                          SelectedItem="{Binding MediaQuality}" MinWidth="105" Height="37"
+                          Background="#283D54" Foreground="#F1F8FF" Margin="8,0,0,0"
+                          ToolTip="Media quality for Download video; direct file downloads ignore this setting">
+                    <ComboBox.ItemContainerStyle>
+                        <Style TargetType="ComboBoxItem">
+                            <Setter Property="Background" Value="#283D54" />
+                            <Setter Property="Foreground" Value="#F1F8FF" />
+                            <Style.Triggers>
+                                <Trigger Property="IsHighlighted" Value="True">
+                                    <Setter Property="Background" Value="#48C8BB" />
+                                    <Setter Property="Foreground" Value="#09222A" />
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ComboBox.ItemContainerStyle>
+                </ComboBox>
+                <Button Grid.Column="4" Content="Download" Command="{Binding AddCommand}"
                         Background="{StaticResource Accent}" Foreground="#102635" Margin="8,0,0,0" />
             </Grid>
         </Border>

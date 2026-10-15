@@ -29,6 +29,7 @@ public sealed class DownloadJobViewModel(DownloadItem item) : INotifyPropertyCha
     {
         get
         {
+            if (Item.IsMedia) return Item.MediaQuality == "Audio only" ? "Music" : "Video";
             string extension = Path.GetExtension(Item.FileName).ToLowerInvariant();
             return extension switch
             {
