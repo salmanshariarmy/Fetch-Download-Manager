@@ -1,3 +1,4 @@
+﻿using System.IO;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -243,3 +244,4 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         try { _store.Save(Jobs.Select(j => j.Item)); } catch (IOException) { }
     }
 }
+
